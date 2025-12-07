@@ -1,49 +1,137 @@
+---
+name: analisis-code
+description: Intruciones de analisis
+invokable: true
+---
+
 # Web Admin Platform
 
-Web admin platform for ecommerce marketplace using Next.js, TypeScript, and web3 technologies.
 
-## Project Structure
+### **🌐 FRONTEND**
+- [ ] `Web3Context` programado con localStorage
+- [ ] Hook `useWallet` implementado
+- [ ] Servicio `Web3Service` creado
+- [ ] Configuración del contrato actualizada
+- [ ] Todas las páginas creadas y funcionando:
+  - [ ] `/` - Landing con conexión MetaMask
+  - [ ] `/dashboard` - Panel principal
+  - [ ] `/tokens` y `/tokens/create` - Gestión tokens
+  - [ ] `/tokens/[id]` y `/tokens/[id]/transfer` - Detalles y transferencias
+  - [ ] `/transfers` - Transferencias pendientes
+  - [ ] `/admin` y `/admin/users` - Panel administración
+  - [ ] `/profile` - Perfil usuario
+- [ ] Header con navegación implementado
+- [ ] Componentes UI base creados
 
-- `/src/app` - Next.js App Router pages and layout
-- `/src/components` - React components
-- `/src/hooks` - Custom React hooks for web3 and app logic
-- `/src/contexts` - React context providers
-- `/src/lib` - Utility functions, contracts configuration
-- `/src/types` - TypeScript type definitions
+### **🔗 INTEGRACIÓN**
+- [ ] Conexión MetaMask funcionando
+- [ ] Registro de usuarios por rol implementado
+- [ ] Aprobación por admin operativa
+- [ ] Creación de tokens con metadatos
+- [ ] Sistema de transferencias completo
+- [ ] Aceptar/rechazar transferencias funcionando
+- [ ] Trazabilidad de productos visible
+- [ ] Persistencia en localStorage implementada
 
-## Development Commands
+### **📱 FUNCIONALIDAD COMPLETA**
+- [ ] Flujo completo FABRICADA→HW_APROBADO→SW_VALIDADO→DISTRIBUIDA
+- [ ] Validaciones de permisos por rol
+- [ ] Estados visuales correctos (pending, approved, etc.)
+- [ ] Manejo de errores implementado
+- [ ] Design responsive funcionando
+- [ ] Build de producción sin errores
 
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run lint` - Run linting
-- `npm run test` - Run tests
 
-## Web3 Integration
 
-The platform integrates with Ethereum blockchain through:
 
-- **Ethers.js** - Web3 library for contract interaction
-- **MetaMask** - Wallet connectivity
-- **Foundry** - Smart contract development and testing
 
-Key web3 features:
+# Sistema de Trazabilidad de Netbooks - Panel de Administración
 
-- Wallet connection and account management
-- Contract interaction through custom hooks
-- Role-based access control (Admin, Company Owner, Customer)
-- Transaction monitoring and state management
+## 🎯 Descripción del Sistema
 
-## Smart Contracts
+Este sistema web3 implementa un contrato inteligente de trazabilidad para el ciclo de vida completo de netbooks educativas. **Solo el administrador designado** tiene control total sobre la gestión de roles y la supervisión del sistema.
 
-The platform interacts with Solidity smart contracts deployed on the blockchain. Key contracts include:
+## 🔐 Acceso Exclusivo del Administrador
 
-- **Ecommerce.sol** - Main marketplace contract handling products, orders, companies
-- **EuroToken.sol** - ERC-20 stablecoin contract
+### **Privilegios Únicos del Administrador**
+- ✅ **Gestión de Roles**: Otorgar o revocar permisos a direcciones de blockchain
+- ✅ **Supervisión Total**: Visualización completa de todas las transacciones y estados
+- ✅ **Configuración del Sistema**: Definir parámetros y estructuras de datos JSON
+- ❌ **Usuarios regulares**: Solo pueden consultar información (lectura pública)
 
-Contract ABIs are located in `src/contracts/abis/` and addresses are configured in `src/lib/contracts/addresses.ts`.
+## 🏗️ Arquitectura del Sistema
 
-## State Management
+### **Control de Acceso Basado en Roles (RBAC)**
+- Sistema de permisos granular usando `AccessControl` de OpenZeppelin
+- Cada función requiere un rol específico asignado por el administrador
+- Trazabilidad pública para auditoría, datos sensibles protegidos
 
-- **React Context** - For global state like wallet connection and user roles
-- **React Hooks** - Custom hooks for encapsulating web3 logic
-- **localStorage** - Persisting wallet connection across sessions
+### **Máquina de Estados con Tokens NFT**
+- **Token por máquina**: Cada netbook representa un NFT único
+- **Estados secuenciales**: Flujo predefinido que no permite regresiones
+- **Historial inmutable**: Todos los cambios quedan registrados en el token
+
+## 📊 Estados del Ciclo de Vida
+
+| Estado | Descripción | Rol Responsable |
+|--------|-------------|-----------------|
+| **FABRICADA** | Registro inicial por el fabricante | FABRICANTE_ROLE |
+| **HW_APROBADO** | Hardware verificado y aprobado | AUDITOR_HW_ROLE |
+| **SW_VALIDADO** | Software instalado y validado | TECNICO_SW_ROLE |
+| **DISTRIBUIDA** | Asignada a estudiante final | ESCUELA_ROLE |
+
+> **Restricción**: Progresión secuencial obligatoria. No se pueden saltar estados.
+
+## ⚙️ Funcionalidades del Panel Administrativo
+
+### **1. Gestión de Roles (Exclusivo Admin)**
+```solidity
+// Solo ejecutable por DEFAULT_ADMIN_ROLE
+grantRole(role, address)    // Conceder permiso
+revokeRole(role, address)   // Revocar permiso
+viewRoleMembers(role)       // Ver direcciones con rol
+```
+
+
+
+
+
+### **🌐 FRONTEND**
+- [ ] Proyecto Next.js inicializado con TypeScript
+- [ ] Dependencias instaladas (ethers, tailwind, radix-ui)
+- [ ] `Web3Context` programado con localStorage
+- [ ] Hook `useWallet` implementado
+- [ ] Servicio `Web3Service` creado
+- [ ] Configuración del contrato actualizada
+- [ ] Todas las páginas creadas y funcionando:
+  - [ ] `/` - Landing con conexión MetaMask
+  - [ ] `/dashboard` - Panel principal
+  - [ ] `/tokens` y `/tokens/create` - Gestión tokens
+  - [ ] `/tokens/[id]` y `/tokens/[id]/transfer` - Detalles y transferencias
+  - [ ] `/transfers` - Transferencias pendientes
+  - [ ] `/admin` y `/admin/users` - Panel administración
+  - [ ] `/profile` - Perfil usuario
+- [ ] Header con navegación implementado
+- [ ] Componentes UI base creados
+
+### **🔗 INTEGRACIÓN**
+- [ ] Conexión MetaMask funcionando
+- [ ] Registro de usuarios por rol implementado
+- [ ] Aprobación por admin operativa
+- [ ] Creación de tokens con metadatos
+- [ ] Sistema de transferencias completo
+- [ ] Aceptar/rechazar transferencias funcionando
+- [ ] Trazabilidad de productos visible
+- [ ] Persistencia en localStorage implementada
+
+### **📱 FUNCIONALIDAD COMPLETA**
+- [ ] Flujo completo Producer→Factory→Retailer→Consumer
+- [ ] Validaciones de permisos por rol
+- [ ] Estados visuales correctos (pending, approved, etc.)
+- [ ] Manejo de errores implementado
+- [ ] Design responsive funcionando
+- [ ] Build de producción sin errores
+
+
+
+

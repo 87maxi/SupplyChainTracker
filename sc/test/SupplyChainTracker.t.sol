@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {SupplyChainTracker} from "../src/SupplyChainTracker.sol";
 
 contract SupplyChainTrackerTest is Test {

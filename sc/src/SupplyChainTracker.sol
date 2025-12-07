@@ -75,15 +75,22 @@ contract SupplyChainTracker is AccessControl {
     
     // Modificador para verificar el estado previo de netbook
     modifier netbookStateIs(string memory serial, NetbookState expectedState) {
-        require(netbooks[serial].state == expectedState, unicode"Estado incorrecto para esta operación");
+        _checkNetbookState(serial, expectedState);
         _;
     }
-    
-    // Modificador para verificar que la dirección tiene el rol aprobado
+
+    function _checkNetbookState(string memory serial, NetbookState expectedState) internal view {
+        require(netbooks[serial].state == expectedState, unicode"Estado incorrecto para esta operación");
+    }
+
     modifier onlyApprovedRole(bytes32 role) {
+        _checkApprovedRole(role);
+        _;
+    }
+
+    function _checkApprovedRole(bytes32 role) internal view {
         require(roleApprovals[role][msg.sender].state == ApprovalState.Approved, 
                 unicode"Rol no aprobado para esta dirección");
-        _;
     }
     
     constructor() {

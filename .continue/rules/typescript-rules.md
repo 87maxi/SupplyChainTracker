@@ -6,30 +6,28 @@ invokable: false
 
 
 
- 
-## instala las dependencias y implementalas en el projecto
-**definicion del projecto** si el prjecto ya esta inicializado omitir estas intruciones
-- **Next.js** - React framework
-- **TypeScript** - usa typescript de manera tigurosa el tipado de varible, por ningun motivo uses **any**
-- **Tailwind CSS** - stilos usa sibre diseño moderno orientados a web3
-- **Ethers.js** - interaccion con metamask y con anvil
-- **MetaMask** - Wallet integration
-- **Jest**  - test funcional
-- **eslint**- se riguroso con el uso de la implemitacion de esta dependencia
-- **npx npm yarn** - siempre agrega el flag --yes en el comando para evitar que sea interactivo, o busca una alternativa para poder ejecutar el comando que necesitas
-
-# #TypeScript y Estándares de Codificación
 
 
-**1. Tipado Riguroso (TypeScript):**
+## TypeScript y Estándares de Codificación
+
+
+**1. utiliza el workspace ./web:** 
+   - dentro de el workspace ya hay una extructura definida, manten la consistencia basandote en la extrutura de directorios
+   - manten siempre la consistencia de una plataforma web3
+   - las dependencias estan instaladas, si necesitas ver las dependecias disponibles usa el package.json
+
+
+**2. Tipado Riguroso (TypeScript):**
    - Siempre utiliza **tipos explícitos** para argumentos de funciones, retornos y variables de estado (`useState`).
    - nunca uses **any**. Prefiere los tipos de utilidad (Partial, Omit, Record) sobre la redefinición.
+   - **TypeScript** - usa typescript de manera tigurosa el tipado de varible, por ningun motivo uses **any**
 
-**2. Desarrollo de Componentes (React/Next.js):**
+**3. Desarrollo de Componentes (React/Next.js):**
    - Usa **Componentes de Función** y Hooks.
-   - Usa **(Tailwind)** segmenta los stilos con el criterio de la definicion de la interfaz
+   - Usa **(Tailwind)** en caso que sea necesario y no se pueda resolver con shadcn segmenta los stilos con el criterio de la definicion de la interfaz
+   - Implementa siempre **componentes de shadcn** priorisando sobre ta
 
-**3. Diseño de Interfaz (Responsividad):**
+**4. Diseño de Interfaz (Responsividad):**
    - **Responsivo por Defecto:** Todo el código de UI debe ser diseñado utilizando ese enfoque 
    - **Responsividad** Utiliza las utilidades de diseño clases de Tailwind se muy riguroso con la definiciones de css, para asegurar que la interfaz se adapte correctamente a dispositivos móviles, tabletas y escritorios.
 
@@ -57,6 +55,7 @@ invokable: false
  - para la interacion con solidity se utiliza anvil
  - utiliza siemprecuentas de anvil
  - utiliza las herramientas que se utilizan con foundry
- - analiza los abi que estan **./src/contracts/abis/EcommerceABI.json** y utiliza como gia
+ - analiza los abi que estan **./src/contracts/SupplyChainTrackerABI.json** y utiliza como gia
  - las coneccion a la wallet es siempre a travez de metamask
  - utiliza ethers como libreria para el manejo de la wallet
+ - utiliza la conexion a la wallet de manera agnostica, que se pueda implementar con la wallet que este en la extencion  del browser
