@@ -18,8 +18,16 @@ export class Web3Service {
   private provider: ethers.BrowserProvider | ethers.JsonRpcProvider | null = null;
   private signer: ethers.Signer | null = null;
   private contract: ethers.Contract | null = null;
+  private readOnlyProvider: ethers.JsonRpcProvider;
+  private readOnlyContract: ethers.Contract;
 
   constructor() {
+    this.readOnlyProvider = new ethers.JsonRpcProvider(RPC_URL);
+    this.readOnlyContract = new ethers.Contract(
+      CONTRACT_ADDRESS,
+      SupplyChainTrackerABI,
+      this.readOnlyProvider
+    );
     this.initializeProvider();
   }
 
@@ -29,7 +37,7 @@ export class Web3Service {
       this.provider = new ethers.BrowserProvider((window as any).ethereum);
     } else {
       // Fallback to default provider
-      this.provider = new ethers.JsonRpcProvider(RPC_URL);
+      this.provider = this.readOnlyProvider;
     }
   }
 
@@ -122,31 +130,34 @@ export class Web3Service {
 
   async hasRole(role: string, account: string): Promise<boolean> {
     try {
-      if (!this.contract) await this.connect();
-
-      return await this.contract?.hasRole(role, account);
+      // Use read-only contract for view functions
+      return await this.readOnlyContract.hasRole(role, account);
     } catch (error) {
       console.error('Error checking role:', error);
+      // Fallback to wallet provider if read-only fails
+      if (this.contract) {
+        return await this.contract.hasRole(role, account);
+      }
       throw this.handleError(error);
     }
   }
 
   async getRoleStatus(role: string, account: string): Promise<unknown> {
     try {
-      if (!this.contract) await this.connect();
-
-      return await this.contract?.getRoleStatus(role, account);
+      // Use read-only contract for view functions
+      return await this.readOnlyContract.getRoleStatus(role, account);
     } catch (error) {
       console.error('Error getting role status:', error);
+      if (this.contract) {
+        return await this.contract.getRoleStatus(role, account);
+      }
       throw this.handleError(error);
     }
   }
 
   async getNetbookReport(serialNumber: string): Promise<unknown> {
     try {
-      if (!this.contract) await this.connect();
-
-      return await this.contract?.getNetbookReport(serialNumber);
+      return await this.readOnlyContract.getNetbookReport(serialNumber);
     } catch (error) {
       console.error('Error getting netbook report:', error);
       throw this.handleError(error);
@@ -155,9 +166,7 @@ export class Web3Service {
 
   async getNetbookState(serialNumber: string): Promise<number> {
     try {
-      if (!this.contract) await this.connect();
-
-      return await this.contract?.getNetbookState(serialNumber);
+      return await this.readOnlyContract.getNetbookState(serialNumber);
     } catch (error) {
       console.error('Error getting netbook state:', error);
       throw this.handleError(error);
@@ -214,6 +223,76 @@ export class Web3Service {
       return tx.hash;
     } catch (error) {
       console.error('Error validating software:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async requestRoleApproval(role: string): Promise<string> {
+    try {
+      if (!this.contract) await this.connect();
+
+      const tx = await this.contract?.requestRoleApproval(role);
+      await tx.wait();
+
+      return tx.hash;
+    } catch (error) {
+      console.error('Error requesting role approval:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async approveRole(role: string, account: string): Promise<string> {
+    try {
+      if (!this.contract) await this.connect();
+
+      const tx = await this.contract?.approveRole(role, account);
+      await tx.wait();
+
+      return tx.hash;
+    } catch (error) {
+      console.error('Error approving role:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async rejectRole(role: string, account: string): Promise<string> {
+    try {
+      if (!this.contract) await this.connect();
+
+      const tx = await this.contract?.rejectRole(role, account);
+      await tx.wait();
+
+      return tx.hash;
+    } catch (error) {
+      console.error('Error rejecting role:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async cancelRoleRequest(role: string): Promise<string> {
+    try {
+      if (!this.contract) await this.connect();
+
+      const tx = await this.contract?.cancelRoleRequest(role);
+      await tx.wait();
+
+      return tx.hash;
+    } catch (error) {
+      console.error('Error canceling role request:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async revokeRoleApproval(role: string, account: string): Promise<string> {
+    try {
+      if (!this.contract) await this.connect();
+
+      const tx = await this.contract?.revokeRoleApproval(role, account);
+      await tx.wait();
+
+      return tx.hash;
+    } catch (error) {
+      console.error('Error revoking role approval:', error);
       throw this.handleError(error);
     }
   }

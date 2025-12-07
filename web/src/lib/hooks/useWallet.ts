@@ -36,18 +36,25 @@ export const useWallet = () => {
     const initializeWallet = async () => {
       try {
         // Check if MetaMask is installed
-        if (typeof window !== 'undefined' && (window as unknown as { ethereum: EthereumProvider }).ethereum) {
-          const ethereum = (window as unknown as { ethereum: EthereumProvider }).ethereum;
+        if (typeof window !== 'undefined' && (window as any).ethereum) {
+          const ethereum = (window as any).ethereum;
 
-          // Check for existing connection
-          const accounts = await ethereum.request({ method: 'eth_accounts' }) as string[];
+          // Check if user manually disconnected
+          const isDisconnected = localStorage.getItem('isDisconnected') === 'true';
 
-          if (accounts.length > 0) {
-            setWalletState({
-              address: accounts[0],
-              isConnected: true,
-              isLoading: false
-            });
+          if (!isDisconnected) {
+            // Check for existing connection
+            const accounts = await ethereum.request({ method: 'eth_accounts' }) as string[];
+
+            if (accounts.length > 0) {
+              setWalletState({
+                address: accounts[0],
+                isConnected: true,
+                isLoading: false
+              });
+            } else {
+              setWalletState(prev => ({ ...prev, isLoading: false }));
+            }
           } else {
             setWalletState(prev => ({ ...prev, isLoading: false }));
           }
@@ -72,10 +79,24 @@ export const useWallet = () => {
 
   const connect = async () => {
     try {
-      if (typeof window !== 'undefined' && (window as unknown as { ethereum: EthereumProvider }).ethereum) {
-        const accounts = await (window as unknown as { ethereum: EthereumProvider }).ethereum.request({
+      if (typeof window !== 'undefined' && (window as any).ethereum) {
+        const ethereum = (window as any).ethereum;
+
+        // Try to request permissions to force account selection (if supported)
+        try {
+          await ethereum.request({
+            method: "wallet_requestPermissions",
+            params: [{ eth_accounts: {} }]
+          });
+        } catch (error) {
+          console.warn("Wallet does not support wallet_requestPermissions, falling back to eth_requestAccounts", error);
+        }
+
+        const accounts = await ethereum.request({
           method: 'eth_requestAccounts'
         }) as string[];
+
+        localStorage.removeItem('isDisconnected');
 
         setWalletState({
           address: accounts[0],
@@ -92,6 +113,7 @@ export const useWallet = () => {
   };
 
   const disconnect = () => {
+    localStorage.setItem('isDisconnected', 'true');
     setWalletState({
       address: null,
       isConnected: false,

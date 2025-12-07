@@ -5,8 +5,16 @@ import { Button } from '@/components/ui/button';
 import { useWallet } from '@/lib/hooks/useWallet';
 import { truncateAddress } from '@/lib/utils';
 
+import { useRouter } from 'next/navigation';
+
 export function Header() {
   const { address, isConnected, connect, disconnect } = useWallet();
+  const router = useRouter();
+
+  const handleDisconnect = () => {
+    disconnect();
+    router.push('/');
+  };
 
   return (
     <header className="border-b">
@@ -34,7 +42,7 @@ export function Header() {
               <span className="text-sm text-muted-foreground">
                 {truncateAddress(address || '')}
               </span>
-              <Button variant="outline" onClick={disconnect}>
+              <Button variant="outline" onClick={handleDisconnect}>
                 Desconectar
               </Button>
             </div>

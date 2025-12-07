@@ -1,18 +1,12 @@
 "use client";
 
 import { useState } from 'react';
-import { UserRoleForm } from '@/components/admin/UserRoleForm';
+import { RoleManagement } from '@/components/admin/RoleManagement';
 import { UserList } from '@/components/admin/UserList';
 import { useWeb3 } from '@/lib/contexts/Web3Context';
 
 export default function AdminUsersPage() {
-  const { address, isConnected } = useWeb3();
-  const [refreshKey, setRefreshKey] = useState(0);
-
-  const handleRoleUpdated = () => {
-    // Force refresh of UserList component
-    setRefreshKey(prev => prev + 1);
-  };
+  const { isConnected } = useWeb3();
 
   if (!isConnected) {
     return (
@@ -34,9 +28,9 @@ export default function AdminUsersPage() {
         </p>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <UserRoleForm onRoleUpdated={handleRoleUpdated} />
-        <UserList key={refreshKey} />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <RoleManagement />
+        <UserList />
       </div>
     </div>
   );
