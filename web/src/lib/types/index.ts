@@ -10,7 +10,7 @@ export interface UserRoleStatus {
   role: string;
   account: string;
   // State is a number (0: Pending, 1: Approved, 2: Rejected, 3: Canceled)
-  state: number; 
+  state: number;
   approvalTimestamp: string;
   approvedBy: string;
 }
@@ -69,6 +69,10 @@ export interface Web3ContextType extends WalletState {
   disconnectWallet: () => void;
   isAdmin: boolean;
   isDefaultAdmin: boolean;
+  isManufacturer: boolean;
+  isAuditor: boolean;
+  isTechnician: boolean;
+  isSchool: boolean;
   hasAnyRole: boolean;
   refreshRoles: () => Promise<void>;
   web3Service: Web3Service | null;
@@ -97,6 +101,7 @@ export declare class Web3Service {
   constructor(signer: Signer | null);
   hasRole(role: string, account: string): Promise<boolean>;
   getRoleStatus(role: string, account: string): Promise<UserRoleStatus>;
+  getAllPendingRoleRequests(): Promise<UserRoleStatus[]>;
   grantRole(role: string, account: string): Promise<string>;
   revokeRole(role: string, account: string): Promise<string>;
   getNetbookReport(serialNumber: string): Promise<NetbookReport>;

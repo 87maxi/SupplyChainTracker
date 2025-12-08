@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, console2} from "forge-std/Test.sol";
 import {SupplyChainTracker} from "../src/SupplyChainTracker.sol";
 
 contract SupplyChainTrackerTest is Test {
@@ -273,5 +273,88 @@ contract SupplyChainTrackerTest is Test {
         assertEq(nb.destinationSchoolHash, schoolHash);
         assertEq(nb.studentIdHash, studentHash);
         assertTrue(nb.distributionTimestamp > 0);
+    }
+
+    // --- Test: GetAllPendingRoleRequests ---
+    function test_GetAllPendingRoleRequests() public {
+        address newFabricante = address(0x10);
+        address newAuditor = address(0x11);
+        address newTecnico = address(0x12);
+        
+        // Solicitar roles - todos deberían estar pendientes
+        vm.prank(newFabricante);
+        tracker.requestRoleApproval(tracker.FABRICANTE_ROLE());
+        
+        vm.prank(newAuditor);
+        tracker.requestRoleApproval(tracker.AUDITOR_HW_ROLE());
+        
+        vm.prank(newTecnico);
+        tracker.requestRoleApproval(tracker.TECNICO_SW_ROLE());
+        
+        // Obtener todas las solicitudes pendientes
+        SupplyChainTracker.RoleApproval[] memory pendingRequests = tracker.getAllPendingRoleRequests();
+        
+        // Deberíamos tener 3 solicitudes pendientes
+        assertEq(pendingRequests.length, 3);
+        
+        // Verificar que todas las solicitudes están en estado Pendiente (0)
+        for (uint i = 0; i < pendingRequests.length; i++) {
+            assertEq(uint256(pendingRequests[i].state), 0); // Pending
+            assertTrue(pendingRequests[i].approvalTimestamp > 0);
+        }
+        
+        // Verificar que las direcciones y roles son correctos
+        bool foundFabricante = false;
+        bool foundAuditor = false;
+        bool foundTecnico = false;
+        
+        for (uint i = 0; i < pendingRequests.length; i++) {
+            console2.log("Checking request", i);
+            console2.log("  Account:", uint256(uint160(pendingRequests[i].account)));
+            console2.log("  Expected fabricante:", uint256(uint160(newFabricante)));
+            console2.log("  Expected auditor:", uint256(uint160(newAuditor)));
+            console2.log("  Expected tecnico:", uint256(uint160(newTecnico)));
+            
+            if (pendingRequests[i].account == newFabricante) {
+                console2.log("Found fabricante request");
+                assertEq(pendingRequests[i].role, tracker.FABRICANTE_ROLE());
+                foundFabricante = true;
+            }
+            if (pendingRequests[i].account == newAuditor) {
+                console2.log("Found auditor request");
+                assertEq(pendingRequests[i].role, tracker.AUDITOR_HW_ROLE());
+                foundAuditor = true;
+            }
+            if (pendingRequests[i].account == newTecnico) {
+                console2.log("Found tecnico request");
+                assertEq(pendingRequests[i].role, tracker.TECNICO_SW_ROLE());
+                foundTecnico = true;
+            }
+        }
+        
+        console2.log("foundFabricante:", foundFabricante);
+        console2.log("foundAuditor:", foundAuditor);
+        console2.log("foundTecnico:", foundTecnico);
+        assertTrue(foundFabricante && foundAuditor && foundTecnico);
+        
+        // Aprobar una solicitud
+        vm.prank(admin);
+        tracker.approveRole(tracker.FABRICANTE_ROLE(), newFabricante);
+        
+        // Obtener nuevamente las solicitudes pendientes
+        SupplyChainTracker.RoleApproval[] memory updatedPendingRequests = tracker.getAllPendingRoleRequests();
+        
+        // Ahora deberíamos tener 2 solicitudes pendientes
+        assertEq(updatedPendingRequests.length, 2);
+        
+        // Verificar que la solicitud aprobada ya no está en la lista
+        bool stillFoundFabricante = false;
+        for (uint i = 0; i < updatedPendingRequests.length; i++) {
+            if (updatedPendingRequests[i].account == newFabricante) {
+                stillFoundFabricante = true;
+                break;
+            }
+        }
+        assertFalse(stillFoundFabricante);
     }
 }

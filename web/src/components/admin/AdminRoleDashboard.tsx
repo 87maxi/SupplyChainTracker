@@ -68,57 +68,30 @@ export function AdminRoleDashboard() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'all'>('pending');
 
-// Fetch all role requests and stats
+  // Fetch all role requests and stats
   const fetchData = useCallback(async () => {
     if (!web3Service) return;
 
     setLoading(true);
     try {
-      // Get all roles
-      const roles = [
-        getRoleConstants().FABRICANTE_ROLE,
-        getRoleConstants().AUDITOR_HW_ROLE,
-        getRoleConstants().TECNICO_SW_ROLE,
-        getRoleConstants().ESCUELA_ROLE
-      ];
+      // Fetch all pending requests from the contract
+      const pendingRequestsData = await web3Service.getAllPendingRoleRequests();
 
-      // For demo purposes, we'll check some common addresses
-      // In a production environment, you would use events or a subgraph
-      const commonAddresses = [
-        '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC', // Test account with pending request
-        '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
-        '0x742d35Cc6634C0532925a3b844Bc454e4438f44f',
-        '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266' // Admin account
-      ];
+      const roleRequests: RoleRequest[] = pendingRequestsData.map(status => {
+        const normalizedRole = status.role.toLowerCase();
+        const roleData = roleInfo[normalizedRole as keyof typeof roleInfo];
 
-      const roleRequests: RoleRequest[] = [];
-
-      // Check each address for each role
-      for (const address of commonAddresses) {
-        for (const role of roles) {
-          try {
-            const status = await web3Service.getRoleStatus(role, address);
-            
-            // Only add requests with valid accounts (not zero address)
-            if (status.account !== '0x0000000000000000000000000000000000000000') {
-              const roleData = roleInfo[role as keyof typeof roleInfo];
-              roleRequests.push({
-                id: `${role}-${address}`,
-                address: status.account,
-                role: status.role,
-                roleName: roleData.name,
-                roleIcon: roleData.icon,
-                state: Number(status.state),
-                requestTimestamp: Number(status.approvalTimestamp),
-                approvedBy: status.approvedBy
-              });
-            }
-          } catch (error) {
-            console.error(`Error fetching status for role ${role} and address ${address}:`, error);
-            // Continue with other addresses/roles
-          }
-        }
-      }
+        return {
+          id: `${normalizedRole}-${status.account}`,
+          address: status.account,
+          role: normalizedRole,
+          roleName: roleData?.name || 'Rol Desconocido',
+          roleIcon: roleData?.icon || Users,
+          state: status.state,
+          requestTimestamp: Number(status.approvalTimestamp),
+          approvedBy: status.approvedBy
+        };
+      });
 
       // Calculate stats based on the requests we found
       const pendingRequests = roleRequests.filter(r => r.state === 0).length;
@@ -178,11 +151,11 @@ export function AdminRoleDashboard() {
         prev.map(req =>
           req.id === requestId
             ? {
-                ...req,
-                state: 1,
-                approvalTimestamp: Date.now(),
-                approvedBy: adminAddress
-              }
+              ...req,
+              state: 1,
+              approvalTimestamp: Date.now(),
+              approvedBy: adminAddress
+            }
             : req
         )
       );
@@ -199,8 +172,8 @@ export function AdminRoleDashboard() {
 
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
-      toast.error('Error al aprobar solicitud', { 
-        description: errorMessage 
+      toast.error('Error al aprobar solicitud', {
+        description: errorMessage
       });
     }
   };
@@ -217,11 +190,11 @@ export function AdminRoleDashboard() {
         prev.map(req =>
           req.id === requestId
             ? {
-                ...req,
-                state: 2,
-                approvalTimestamp: Date.now(),
-                approvedBy: adminAddress
-              }
+              ...req,
+              state: 2,
+              approvalTimestamp: Date.now(),
+              approvedBy: adminAddress
+            }
             : req
         )
       );
@@ -234,8 +207,8 @@ export function AdminRoleDashboard() {
 
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
-      toast.error('Error al rechazar solicitud', { 
-        description: errorMessage 
+      toast.error('Error al rechazar solicitud', {
+        description: errorMessage
       });
     }
   };
@@ -565,11 +538,10 @@ export function AdminRoleDashboard() {
               <CardContent>
                 <div className="space-y-4">
                   {filteredRequests.map((request) => (
-                    <Card key={request.id} className={`border-l-4 ${
-                      request.state === 0 ? 'border-l-yellow-400' :
+                    <Card key={request.id} className={`border-l-4 ${request.state === 0 ? 'border-l-yellow-400' :
                       request.state === 1 ? 'border-l-green-400' :
-                      'border-l-red-400'
-                    }`}>
+                        'border-l-red-400'
+                      }`}>
                       <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-4">

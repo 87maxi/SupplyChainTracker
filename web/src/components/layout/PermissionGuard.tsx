@@ -7,7 +7,7 @@ import { useWeb3 } from '@/lib/contexts/Web3Context';
 
 interface PermissionGuardProps {
   children: React.ReactNode;
-  requiredRole?: 'admin' | 'defaultAdmin';
+  requiredRole?: 'admin' | 'defaultAdmin' | 'manufacturer' | 'auditor' | 'technician' | 'school';
   fallback?: React.ReactNode;
 }
 
@@ -16,7 +16,17 @@ export function PermissionGuard({
   requiredRole = 'admin',
   fallback
 }: PermissionGuardProps) {
-  const { isConnected, isAdmin, isDefaultAdmin, connectWallet, isLoading } = useWeb3();
+  const {
+    isConnected,
+    isAdmin,
+    isDefaultAdmin,
+    isManufacturer,
+    isAuditor,
+    isTechnician,
+    isSchool,
+    connectWallet,
+    isLoading
+  } = useWeb3();
 
   if (isLoading) {
     return (
@@ -50,12 +60,45 @@ export function PermissionGuard({
     );
   }
 
-  const hasPermission = requiredRole === 'defaultAdmin' ? isDefaultAdmin : isAdmin;
+  let hasPermission = false;
+
+  switch (requiredRole) {
+    case 'defaultAdmin':
+      hasPermission = isDefaultAdmin;
+      break;
+    case 'manufacturer':
+      hasPermission = isManufacturer;
+      break;
+    case 'auditor':
+      hasPermission = isAuditor;
+      break;
+    case 'technician':
+      hasPermission = isTechnician;
+      break;
+    case 'school':
+      hasPermission = isSchool;
+      break;
+    case 'admin':
+    default:
+      hasPermission = isAdmin;
+      break;
+  }
 
   if (!hasPermission) {
     if (fallback) {
       return <>{fallback}</>;
     }
+
+    const getRoleName = (role: string) => {
+      switch (role) {
+        case 'defaultAdmin': return 'Administrador Principal';
+        case 'manufacturer': return 'Fabricante';
+        case 'auditor': return 'Auditor de Hardware';
+        case 'technician': return 'Técnico de Software';
+        case 'school': return 'Escuela';
+        default: return 'Administrador';
+      }
+    };
 
     return (
       <Card className="w-full border-red-200 bg-red-50/50">
@@ -65,10 +108,7 @@ export function PermissionGuard({
             Acceso Denegado
           </CardTitle>
           <CardDescription className="text-red-700">
-            {requiredRole === 'defaultAdmin'
-              ? 'Solo el administrador principal puede acceder a esta sección.'
-              : 'Necesitas permisos de administrador para acceder a esta sección.'
-            }
+            Necesitas el rol de <strong>{getRoleName(requiredRole)}</strong> para acceder a esta sección.
           </CardDescription>
         </CardHeader>
         <CardContent>

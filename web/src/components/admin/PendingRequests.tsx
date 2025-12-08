@@ -23,7 +23,7 @@ const roleInfo: Record<string, { name: string; icon: React.ComponentType<{ class
 };
 
 export function PendingRequests() {
-  const { web3Service, address: adminAddress, refreshRoles } = useWeb3();
+  const { web3Service, refreshRoles } = useWeb3();
   const [loading, setLoading] = useState(false);
   const [requests, setRequests] = useState<PendingRequest[]>([]);
 
@@ -33,54 +33,27 @@ export function PendingRequests() {
 
     setLoading(true);
     try {
-      const roles = [
-        getRoleConstants().FABRICANTE_ROLE,
-        getRoleConstants().AUDITOR_HW_ROLE,
-        getRoleConstants().TECNICO_SW_ROLE,
-        getRoleConstants().ESCUELA_ROLE
-      ];
+      // Use the new contract method to get all pending requests
+      const allRequests = await web3Service.getAllPendingRoleRequests();
+      
+      // Convert UserRoleStatus to PendingRequest with role info
+      const requestsWithRoleInfo: PendingRequest[] = allRequests.map((status: UserRoleStatus) => {
+        const roleData = roleInfo[status.role];
+        return {
+          ...status,
+          roleName: roleData.name,
+          roleIcon: roleData.icon
+        };
+      });
 
-      // In a real implementation, we would use events or a more efficient method
-      // For now, we'll simulate by checking some common addresses
-      const commonAddresses = [
-        '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
-        '0x742d35Cc6634C0532925a3b844Bc454e4438f44f',
-        '0x742d35Cc6634C0532925a3b844Bc454e4438f44g',
-        '0x742d35Cc6634C0532925a3b844Bc454e4438f44h',
-        adminAddress || ''
-      ].filter(addr => addr !== '');
-
-      const allRequests: PendingRequest[] = [];
-
-      for (const address of commonAddresses) {
-        for (const role of roles) {
-          try {
-            const status = await web3Service.getRoleStatus(role, address);
-            
-            // Only add pending requests (state === 0) with valid accounts
-            if (status.state === 0 && status.account !== '0x0000000000000000000000000000000000000000') {
-              const roleData = roleInfo[role];
-              allRequests.push({
-                ...status,
-                roleName: roleData.name,
-                roleIcon: roleData.icon
-              });
-            }
-          } catch (error) {
-            // Continue with other addresses/roles
-            continue;
-          }
-        }
-      }
-
-      setRequests(allRequests);
+      setRequests(requestsWithRoleInfo);
     } catch (error) {
       console.error('Error fetching pending requests:', error);
       toast.error('Error al cargar solicitudes pendientes');
     } finally {
       setLoading(false);
     }
-  }, [web3Service, adminAddress]);
+  }, [web3Service]);
 
   useEffect(() => {
     fetchPendingRequests();

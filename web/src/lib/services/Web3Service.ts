@@ -101,6 +101,28 @@ export class Web3Service {
   }
 
   /**
+   * @description Gets all pending role requests from the contract.
+   * @returns Array of RoleApproval objects for all pending requests.
+   */
+  async getAllPendingRoleRequests(): Promise<UserRoleStatus[]> {
+    try {
+      const result = await this.readOnlyContract.getAllPendingRoleRequests();
+      
+      // Map the array result to UserRoleStatus objects
+      return result.map((item: [string, string, bigint, bigint, string]) => ({
+        role: item[0] as string,
+        account: item[1] as string,
+        state: Number(item[2]), // Convert BigInt to number
+        approvalTimestamp: item[3].toString(), // Convert BigInt timestamp to string
+        approvedBy: item[4] as string,
+      }));
+    } catch (error) {
+      console.error('Error getting all pending role requests:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  /**
    * @description Gets the full report for a netbook by serial number.
    * @param serialNumber The netbook's serial number.
    * @returns The netbook report object.

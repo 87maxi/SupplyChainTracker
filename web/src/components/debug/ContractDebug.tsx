@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { AlertTriangle, CheckCircle, XCircle, Info } from 'lucide-react';
 import { ethers } from 'ethers';
 import { UserRoleStatus } from '@/lib/types';
+import SupplyChainTrackerABI from '../../contracts/SupplyChainTrackerABI.json';
 
 export function ContractDebug() {
   const { web3Service, address, isConnected, provider } = useWeb3();
@@ -17,24 +18,24 @@ export function ContractDebug() {
   const [error, setError] = useState<string | null>(null);
 
   interface ContractInfo {
-  fabricanteRole?: string;
-  hasDefaultAdminRole?: boolean | string;
-  anvilAdminHasRole?: boolean | string;
-  expectedAnvilAdmin?: string;
-  addressMatchesAnvil?: boolean;
-  directContractCall?: boolean | string;
-  roleStatus?: string;
-  requestRoleApprovalExists?: boolean;
-  contractAddressValid?: boolean;
-  expectedAdminAddress?: string;
-  network?: {
-    name: string;
-    chainId: string;
-  };
-  contractDebugError?: string;
-}
+    fabricanteRole?: string;
+    hasDefaultAdminRole?: boolean | string;
+    anvilAdminHasRole?: boolean | string;
+    expectedAnvilAdmin?: string;
+    addressMatchesAnvil?: boolean;
+    directContractCall?: boolean | string;
+    roleStatus?: string;
+    requestRoleApprovalExists?: boolean;
+    contractAddressValid?: boolean;
+    expectedAdminAddress?: string;
+    network?: {
+      name: string;
+      chainId: string;
+    };
+    contractDebugError?: string;
+  }
 
-const testContractConnection = useCallback(async () => {
+  const testContractConnection = useCallback(async () => {
     if (!web3Service || !address) return;
 
     setLoading(true);
@@ -89,7 +90,8 @@ const testContractConnection = useCallback(async () => {
         console.log('Testing direct contract call...');
         const contract = new ethers.Contract(
           process.env.NEXT_PUBLIC_CONTRACT_ADDRESS!,
-          []
+          SupplyChainTrackerABI,
+          provider
         );
 
         const directResult = await contract.hasRole(adminRole, anvilAdmin);
@@ -138,7 +140,7 @@ const testContractConnection = useCallback(async () => {
         // Test network connectivity
         if (provider) {
           const network = await provider.getNetwork();
-info.network = {
+          info.network = {
             name: network.name,
             chainId: network.chainId.toString()
           };
@@ -208,7 +210,7 @@ info.network = {
                   await window.ethereum.request({
                     method: 'wallet_switchEthereumChain',
                     params: [{ chainId: '0x7A69' }], // 31337 in hex
-});
+                  });
                 } catch (switchError: any) {
                   // If network doesn't exist, add it
                   if (switchError.code === 4902) {
@@ -224,7 +226,7 @@ info.network = {
                           decimals: 18
                         }
                       }]
-});
+                    });
                   }
                 }
 
@@ -365,6 +367,28 @@ info.network = {
                 {JSON.stringify(contractInfo, null, 2)}
               </pre>
             </details>
+
+            <div className="mt-4 p-4 bg-yellow-50 rounded-lg">
+              <h4 className="font-medium mb-2">Solicitudes Pendientes (Raw)</h4>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  if (!web3Service) return;
+                  try {
+                    console.log('Fetching pending requests in debug...');
+                    const requests = await web3Service.getAllPendingRoleRequests();
+                    console.log('Debug requests:', requests);
+                    alert(`Encontradas ${requests.length} solicitudes. Revisa la consola.`);
+                  } catch (e) {
+                    console.error('Debug error:', e);
+                    alert('Error al buscar solicitudes: ' + (e instanceof Error ? e.message : String(e)));
+                  }
+                }}
+              >
+                Consultar Pendientes
+              </Button>
+            </div>
           </div>
         )}
       </CardContent>

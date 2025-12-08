@@ -24,10 +24,10 @@ interface UserAction {
 }
 
 const mockNetbookStatuses = [
-    { state: 0, count: 24, percentage: 30 },
-    { state: 1, count: 18, percentage: 22.5 },
-    { state: 2, count: 22, percentage: 27.5 },
-    { state: 3, count: 16, percentage: 20 }
+  { state: 0, count: 24, percentage: 30 },
+  { state: 1, count: 18, percentage: 22.5 },
+  { state: 2, count: 22, percentage: 27.5 },
+  { state: 3, count: 16, percentage: 20 }
 ];
 
 const roleActions: Record<string, UserAction[]> = {
@@ -181,11 +181,6 @@ export function EnhancedDashboard() {
 
         {/* Notifications */}
         <RoleNotifications />
-
-        {/* Role Request Section for users with pending requests */}
-        <div id="role-request">
-          <RoleRequest />
-        </div>
       </div>
     );
   }

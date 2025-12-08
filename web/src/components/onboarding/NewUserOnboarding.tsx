@@ -16,7 +16,8 @@ import {
   CheckCircle,
   Clock,
   AlertCircle,
-  ArrowRight
+  ArrowRight,
+  ExternalLink
 } from 'lucide-react';
 
 interface RoleOption {
@@ -83,7 +84,8 @@ export function NewUserOnboarding() {
   const { address, isConnected, web3Service } = useWeb3();
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [hasPendingRequest, setHasPendingRequest] = useState(false);
+  const [pendingRoleName, setPendingRoleName] = useState<string | null>(null);
+  const [transactionHash, setTransactionHash] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState<'welcome' | 'select-role' | 'confirm' | 'submitted'>('welcome');
 
   // Check if user has any pending requests
@@ -92,19 +94,20 @@ export function NewUserOnboarding() {
       if (!isConnected || !address || !web3Service) return;
 
       try {
-        const pendingStatuses = await Promise.all(
-          roleOptions.map(async (role) => {
-            try {
-              const status = await web3Service.getRoleStatus(role.id, address);
-              // Check if there's a pending request (state === 0) and the account is not zero address
-              return status.state === 0 && status.account !== '0x0000000000000000000000000000000000000000';
-            } catch (error) {
-              return false;
+        // Find the first pending request
+        for (const role of roleOptions) {
+          try {
+            const status = await web3Service.getRoleStatus(role.id, address);
+            // Check if there's a pending request (state === 0) and the account is not zero address
+            if (status.state === 0 && status.account !== '0x0000000000000000000000000000000000000000') {
+              setPendingRoleName(role.name);
+              return; // Stop after finding the first one
             }
-          })
-        );
-        const hasAnyPending = pendingStatuses.some(Boolean);
-        setHasPendingRequest(hasAnyPending);
+          } catch (error) {
+            console.error(`Error checking status for ${role.name}:`, error);
+          }
+        }
+        setPendingRoleName(null);
       } catch (error) {
         console.error('Error checking existing requests:', error);
       }
@@ -122,13 +125,14 @@ export function NewUserOnboarding() {
     if (!selectedRole || !web3Service) return;
 
     setIsSubmitting(true);
+    setTransactionHash(null);
     try {
       // Check current status before submitting request
       const currentStatus = await web3Service.getRoleStatus(selectedRole, address || '');
-      
+
       // Only allow requesting if no previous request or if canceled
-      if (currentStatus.account !== '0x0000000000000000000000000000000000000000' && 
-          currentStatus.state !== 3) { // 3 = Canceled
+      if (currentStatus.account !== '0x0000000000000000000000000000000000000000' &&
+        currentStatus.state !== 3) { // 3 = Canceled
         toast.error('No puedes solicitar este rol', {
           description: 'Ya tienes una solicitud pendiente o aprobada para este rol.'
         });
@@ -136,9 +140,11 @@ export function NewUserOnboarding() {
         return;
       }
 
-      await web3Service.requestRoleApproval(selectedRole);
+      const txHash = await web3Service.requestRoleApproval(selectedRole);
+      setTransactionHash(txHash);
+
       toast.success('Solicitud enviada correctamente', {
-        description: 'Tu solicitud será revisada por un administrador.'
+        description: `Transacción: ${txHash.slice(0, 10)}...`
       });
       setCurrentStep('submitted');
     } catch (error: unknown) {
@@ -151,10 +157,11 @@ export function NewUserOnboarding() {
 
   const handleStartOver = () => {
     setSelectedRole(null);
+    setTransactionHash(null);
     setCurrentStep('welcome');
   };
 
-  if (hasPendingRequest) {
+  if (pendingRoleName) {
     return (
       <Card className="border-orange-200 bg-orange-50/50">
         <CardHeader>
@@ -163,18 +170,18 @@ export function NewUserOnboarding() {
             Solicitud Pendiente
           </CardTitle>
           <CardDescription className="text-orange-700">
-            Ya tienes una solicitud de rol pendiente de aprobación por parte de un administrador.
+            Ya tienes una solicitud de rol pendiente de aprobación.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-3 p-4 bg-orange-100 rounded-lg">
+          <div className="flex items-center gap-3 p-4 bg-orange-100 rounded-lg border border-orange-200">
             <AlertCircle className="w-5 h-5 text-orange-600" />
             <div>
               <p className="text-sm font-medium text-orange-800">
-                Tu solicitud está siendo revisada
+                Solicitud para: <span className="font-bold">{pendingRoleName}</span>
               </p>
-              <p className="text-xs text-orange-700">
-                Recibirás una notificación cuando sea aprobada o rechazada.
+              <p className="text-xs text-orange-700 mt-1">
+                Tu solicitud está siendo revisada por un administrador. Recibirás una notificación cuando sea aprobada o rechazada.
               </p>
             </div>
           </div>
@@ -350,8 +357,17 @@ export function NewUserOnboarding() {
           </CardDescription>
         </CardHeader>
         <CardContent className="text-center space-y-4">
-          <div className="p-4 bg-white rounded-lg border border-green-200">
-            <p className="text-sm text-muted-foreground">
+          <div className="p-4 bg-white rounded-lg border border-green-200 text-left">
+            <p className="text-sm text-green-800 font-medium mb-2">Detalles de la transacción:</p>
+            {transactionHash ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-gray-50 p-2 rounded border">
+                <span className="font-mono truncate">{transactionHash}</span>
+                <ExternalLink className="w-3 h-3 flex-shrink-0" />
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">Procesando transacción...</p>
+            )}
+            <p className="text-sm text-muted-foreground mt-3">
               Un administrador revisará tu solicitud. Recibirás una notificación cuando sea aprobada.
             </p>
           </div>

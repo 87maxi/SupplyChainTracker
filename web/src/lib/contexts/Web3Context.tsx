@@ -11,9 +11,13 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
   const { address, isConnected, connectWallet, disconnectWallet, isLoading, signer, provider } = useWallet();
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [isDefaultAdmin, setIsDefaultAdmin] = useState<boolean>(false);
+  const [isManufacturer, setIsManufacturer] = useState<boolean>(false);
+  const [isAuditor, setIsAuditor] = useState<boolean>(false);
+  const [isTechnician, setIsTechnician] = useState<boolean>(false);
+  const [isSchool, setIsSchool] = useState<boolean>(false);
   const [hasAnyRole, setHasAnyRole] = useState<boolean>(false);
-  
-  
+
+
 
   // Create Web3Service instance, passing the current signer
   const web3Service = useMemo(() => {
@@ -22,75 +26,68 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
 
   // Function to check and refresh user roles
   const checkRoles = useCallback(async () => {
-    console.log('=== CHECKING ADMIN ROLE ===');
+    console.log('=== CHECKING ROLES ===');
     console.log('Connected address:', address);
-    console.log('Address is valid:', !!address);
-    console.log('Web3Service available:', !!web3Service);
 
     if (isConnected && address && web3Service) {
       try {
-        const adminRole = getRoleConstants().DEFAULT_ADMIN_ROLE;
-        console.log('Admin role hash:', adminRole);
+        const roleConstants = getRoleConstants();
 
-        // First check if we're on Anvil network and connected address is the expected admin
-        const anvilAdmin = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
-        const isAnvilAdmin = address?.toLowerCase() === anvilAdmin.toLowerCase();
-        console.log('Is connected address the Anvil admin?', isAnvilAdmin);
-        console.log('Expected Anvil admin:', anvilAdmin);
-        console.log('Connected address (lowercase):', address?.toLowerCase());
+        // Check all roles in parallel
+        const [
+          defaultAdminResult,
+          manufacturerResult,
+          auditorResult,
+          technicianResult,
+          schoolResult
+        ] = await Promise.all([
+          web3Service.hasRole(roleConstants.DEFAULT_ADMIN_ROLE, address),
+          web3Service.hasRole(roleConstants.FABRICANTE_ROLE, address),
+          web3Service.hasRole(roleConstants.AUDITOR_HW_ROLE, address),
+          web3Service.hasRole(roleConstants.TECNICO_SW_ROLE, address),
+          web3Service.hasRole(roleConstants.ESCUELA_ROLE, address)
+        ]);
 
-        const isDefaultAdminResult = await web3Service.hasRole(adminRole, address);
-        console.log('hasRole result for DEFAULT_ADMIN_ROLE:', isDefaultAdminResult);
-        console.log('Type of result:', typeof isDefaultAdminResult);
+        console.log('Role results:', {
+          defaultAdmin: defaultAdminResult,
+          manufacturer: manufacturerResult,
+          auditor: auditorResult,
+          technician: technicianResult,
+          school: schoolResult
+        });
 
-        // Check operational roles
-        const operationalRoles = [
-          getRoleConstants().FABRICANTE_ROLE,
-          getRoleConstants().AUDITOR_HW_ROLE,
-          getRoleConstants().TECNICO_SW_ROLE,
-          getRoleConstants().ESCUELA_ROLE,
-        ];
+        const anyOperationalRole = manufacturerResult || auditorResult || technicianResult || schoolResult;
+        const finalHasAnyRole = defaultAdminResult || anyOperationalRole;
 
-        console.log('Checking operational roles...');
-        const operationalResults = await Promise.all(
-          operationalRoles.map(async (role) => {
-            try {
-              const hasRole = await web3Service.hasRole(role, address);
-              console.log(`Role ${role}: ${hasRole}`);
-              return hasRole;
-            } catch (error) {
-              console.error(`Error checking role ${role}:`, error);
-              return false;
-            }
-          })
-        );
-        const hasOperationalRole = operationalResults.some(result => result);
-        console.log('Has operational role:', hasOperationalRole);
+        setIsDefaultAdmin(defaultAdminResult);
+        setIsManufacturer(manufacturerResult);
+        setIsAuditor(auditorResult);
+        setIsTechnician(technicianResult);
+        setIsSchool(schoolResult);
 
-        const finalHasAnyRole = isDefaultAdminResult || hasOperationalRole;
-        console.log('Final hasAnyRole:', finalHasAnyRole);
+        // Admin is true if Default Admin OR any operational role (legacy support)
+        // You might want to refine this definition depending on requirements
+        setIsAdmin(defaultAdminResult || anyOperationalRole);
 
-        setIsDefaultAdmin(isDefaultAdminResult);
-        setIsAdmin(isDefaultAdminResult || hasOperationalRole);
         setHasAnyRole(finalHasAnyRole);
-
-        // If connected address is Anvil admin but hasRole returns false, there might be an issue
-        if (isAnvilAdmin && !isDefaultAdminResult) {
-          console.warn('WARNING: Anvil admin address detected but hasRole returned false!');
-          console.warn('This suggests a problem with the contract deployment or connection');
-          console.warn('Contract address:', process.env.NEXT_PUBLIC_CONTRACT_ADDRESS);
-          console.warn('RPC URL:', process.env.NEXT_PUBLIC_RPC_URL);
-        }
 
       } catch (error) {
         console.error('Error during role checking:', error);
         setIsDefaultAdmin(false);
+        setIsManufacturer(false);
+        setIsAuditor(false);
+        setIsTechnician(false);
+        setIsSchool(false);
         setIsAdmin(false);
         setHasAnyRole(false);
       }
     } else {
-      setIsAdmin(false);
       setIsDefaultAdmin(false);
+      setIsManufacturer(false);
+      setIsAuditor(false);
+      setIsTechnician(false);
+      setIsSchool(false);
+      setIsAdmin(false);
       setHasAnyRole(false);
     }
   }, [isConnected, address, web3Service]);
@@ -121,6 +118,10 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
     disconnectWallet,
     isAdmin,
     isDefaultAdmin,
+    isManufacturer,
+    isAuditor,
+    isTechnician,
+    isSchool,
     hasAnyRole,
     refreshRoles,
     web3Service,

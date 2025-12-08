@@ -124,10 +124,11 @@ contract SupplyChainTracker is AccessControl {
             role: role,
             account: msg.sender,
             state: ApprovalState.Pending,
-            approvalTimestamp: 0,
+            approvalTimestamp: block.timestamp,
             approvedBy: address(0)
         });
 
+        _addPendingRequest(role, msg.sender);
         emit RoleStatusUpdated(role, msg.sender, ApprovalState.Pending, msg.sender);
     }
     
@@ -198,7 +199,7 @@ contract SupplyChainTracker is AccessControl {
         if (pendingRequestIndex[role][account] != 0) {
             return; // Already in pending state
         }
-        pendingRequests.push(PendingRequest(role, account));
+        pendingRequests.push(PendingRequest({role: role, account: account}));
         pendingRequestIndex[role][account] = pendingRequests.length; // 1-based index
     }
     
@@ -209,8 +210,9 @@ contract SupplyChainTracker is AccessControl {
         // Simple removal: swap with last and pop
         uint256 lastIndex = pendingRequests.length - 1;
         if (index - 1 != lastIndex) {
-            pendingRequests[index - 1] = pendingRequests[lastIndex];
-            pendingRequestIndex[pendingRequests[lastIndex].role][pendingRequests[lastIndex].account] = index;
+            PendingRequest memory lastRequest = pendingRequests[lastIndex];
+            pendingRequests[index - 1] = lastRequest;
+            pendingRequestIndex[lastRequest.role][lastRequest.account] = index;
         }
         pendingRequests.pop();
         pendingRequestIndex[role][account] = 0;
