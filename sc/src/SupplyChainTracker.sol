@@ -66,6 +66,18 @@ contract SupplyChainTracker is AccessControl {
     // Mapping para estados de aprobación de roles: role => account => RoleApproval
     mapping(bytes32 => mapping(address => RoleApproval)) public roleApprovals;
     
+    // Struct to track pending requests for efficient enumeration
+    struct PendingRequest {
+        bytes32 role;
+        address account;
+    }
+    
+    // Array to track all pending role requests
+    PendingRequest[] public pendingRequests;
+    
+    // Mapping to find index in pendingRequests array: role => account => index
+    mapping(bytes32 => mapping(address => uint256)) public pendingRequestIndex;
+    
     // Eventos
     event NetbookRegistered(string serialNumber, string batchId, string initialModelSpecs);
     event HardwareAudited(string serialNumber, address auditor, bool passed, bytes32 reportHash);
@@ -100,10 +112,14 @@ contract SupplyChainTracker is AccessControl {
     // Funciones administrativas para gestión de roles
     function requestRoleApproval(bytes32 role) external {
         require(role != DEFAULT_ADMIN_ROLE, "Cannot request admin role");
-        require(roleApprovals[role][msg.sender].state == ApprovalState.Pending || 
-                roleApprovals[role][msg.sender].state == ApprovalState.Canceled,
-                "Role request already exists or is approved");
-        
+
+        // Allow requesting if never requested before (account == address(0)) or if canceled
+        if (roleApprovals[role][msg.sender].account != address(0)) {
+            require(roleApprovals[role][msg.sender].state == ApprovalState.Pending ||
+                    roleApprovals[role][msg.sender].state == ApprovalState.Canceled,
+                    "Role request already exists or is approved");
+        }
+
         roleApprovals[role][msg.sender] = RoleApproval({
             role: role,
             account: msg.sender,
@@ -111,7 +127,7 @@ contract SupplyChainTracker is AccessControl {
             approvalTimestamp: 0,
             approvedBy: address(0)
         });
-        
+
         emit RoleStatusUpdated(role, msg.sender, ApprovalState.Pending, msg.sender);
     }
     
@@ -124,6 +140,7 @@ contract SupplyChainTracker is AccessControl {
         roleApprovals[role][account].approvedBy = msg.sender;
         
         _grantRole(role, account);
+        _removePendingRequest(role, account);
         emit RoleStatusUpdated(role, account, ApprovalState.Approved, msg.sender);
     }
     
@@ -136,6 +153,7 @@ contract SupplyChainTracker is AccessControl {
         roleApprovals[role][account].approvedBy = msg.sender;
         
         emit RoleStatusUpdated(role, account, ApprovalState.Rejected, msg.sender);
+        _removePendingRequest(role, account);
     }
     
     function cancelRoleRequest(bytes32 role) external {
@@ -146,6 +164,7 @@ contract SupplyChainTracker is AccessControl {
         roleApprovals[role][msg.sender].approvalTimestamp = block.timestamp;
         
         emit RoleStatusUpdated(role, msg.sender, ApprovalState.Canceled, msg.sender);
+        _removePendingRequest(role, msg.sender);
     }
     
     function revokeRoleApproval(bytes32 role, address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -164,7 +183,38 @@ contract SupplyChainTracker is AccessControl {
         return roleApprovals[role][account];
     }
     
-    // Funciones de escritura
+    function getAllPendingRoleRequests() external view returns (RoleApproval[] memory) {
+        RoleApproval[] memory result = new RoleApproval[](pendingRequests.length);
+        for (uint256 i = 0; i < pendingRequests.length; i++) {
+            PendingRequest memory req = pendingRequests[i];
+            result[i] = roleApprovals[req.role][req.account];
+        }
+        return result;
+    }
+    
+    // Helper functions to manage pending requests array
+    function _addPendingRequest(bytes32 role, address account) internal {
+        // Check if already exists
+        if (pendingRequestIndex[role][account] != 0) {
+            return; // Already in pending state
+        }
+        pendingRequests.push(PendingRequest(role, account));
+        pendingRequestIndex[role][account] = pendingRequests.length; // 1-based index
+    }
+    
+    function _removePendingRequest(bytes32 role, address account) internal {
+        uint256 index = pendingRequestIndex[role][account];
+        if (index == 0 || index > pendingRequests.length) return;
+        
+        // Simple removal: swap with last and pop
+        uint256 lastIndex = pendingRequests.length - 1;
+        if (index - 1 != lastIndex) {
+            pendingRequests[index - 1] = pendingRequests[lastIndex];
+            pendingRequestIndex[pendingRequests[lastIndex].role][pendingRequests[lastIndex].account] = index;
+        }
+        pendingRequests.pop();
+        pendingRequestIndex[role][account] = 0;
+    }
     function registerNetbooks(
         string[] calldata serialNumbers,
         string[] calldata batchIds,

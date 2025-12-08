@@ -1,0 +1,105 @@
+@startuml SupplyChainTracker - Web Application Architecture
+
+title SupplyChainTracker Web Application Architecture
+
+package "Frontend Layer" as Frontend {
+    package "Next.js App Router" as App {
+        [Landing Page (/)]
+        [Dashboard (/dashboard)]
+        [Admin Panel (/admin/*)]
+        [Profile (/profile)]
+    }
+
+    package "Components" as Components {
+        package "Layout" as Layout {
+            [Header]
+            [ConnectButton]
+            [Providers]
+        }
+
+        package "Admin" as Admin {
+            [RoleManagement]
+            [RoleApproval]
+            [UserList]
+            [UserRoleForm]
+        }
+
+        package "Dashboard" as Dashboard {
+            [StatsCard]
+            [NetbookStatusChart]
+            [RoleRequest]
+        }
+
+        package "UI" as UI {
+            [Button]
+            [Card]
+            [Input]
+            [Table]
+            [Badge]
+        }
+    }
+}
+
+package "Business Logic Layer" as Business {
+    package "Hooks" as Hooks {
+        [useWallet]
+        [useWeb3Validation]
+    }
+
+    package "Services" as Services {
+        [Web3Service]
+    }
+
+    package "Contexts" as Contexts {
+        [Web3Context]
+    }
+
+    package "Utils" as Utils {
+        [stringToBytes32]
+        [formatDate]
+        [truncateAddress]
+        [getRoleName]
+        [getNetbookStateInfo]
+    }
+}
+
+package "Data Layer" as Data {
+    package "Types" as Types {
+        [Role]
+        [UserRoleStatus]
+        [Netbook]
+        [NetbookState]
+        [WalletState]
+        [Web3ContextType]
+    }
+
+    package "Contracts" as Contracts {
+        [SupplyChainTrackerABI.json]
+    }
+}
+
+package "External Dependencies" as External {
+    [MetaMask]
+    [Ethers.js v6]
+    [Anvil Local Network]
+    [SupplyChainTracker Contract]
+}
+
+' Relationships
+Frontend --> Business : uses
+Business --> Data : depends on
+Business --> External : integrates with
+
+' Component relationships
+App --> Components : renders
+Components --> Business : consumes
+Business --> External : communicates
+
+' Specific relationships
+[RoleManagement] --> [Web3Service] : contract calls
+[RoleApproval] --> [Web3Service] : role operations
+[useWallet] --> [MetaMask] : wallet connection
+[Web3Service] --> [SupplyChainTrackerABI.json] : contract interface
+[Web3Context] --> [useWallet] : state management
+
+@enduml

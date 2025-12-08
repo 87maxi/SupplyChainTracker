@@ -1,37 +1,12 @@
 "use client";
 
-import { useState } from 'react';
-import { RoleManagement } from '@/components/admin/RoleManagement';
-import { UserList } from '@/components/admin/UserList';
-import { useWeb3 } from '@/lib/contexts/Web3Context';
+import { AdminRoleDashboard } from '@/components/admin/AdminRoleDashboard';
+import { PermissionGuard } from '@/components/layout/PermissionGuard';
 
 export default function AdminUsersPage() {
-  const { isConnected } = useWeb3();
-
-  if (!isConnected) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64 text-center">
-        <h2 className="text-2xl font-bold mb-4">Bienvenido al Panel de Administración</h2>
-        <p className="text-muted-foreground mb-6">
-          Conéctate con tu wallet para acceder al sistema de trazabilidad de netbooks educativas
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold">Gestión de Usuarios</h1>
-        <p className="text-muted-foreground mt-2">
-          Administra los roles de los usuarios en el sistema de trazabilidad
-        </p>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <RoleManagement />
-        <UserList />
-      </div>
-    </div>
+    <PermissionGuard requiredRole="admin">
+      <AdminRoleDashboard />
+    </PermissionGuard>
   );
 }

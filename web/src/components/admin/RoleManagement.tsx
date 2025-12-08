@@ -1,74 +1,96 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import {
     Card,
     CardContent,
     CardDescription,
-    CardFooter,
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useWeb3 } from '@/lib/contexts/Web3Context';
-import { Web3Service, getRoleConstants } from '@/lib/services/Web3Service';
+import { getRoleConstants } from '@/lib/services/Web3Service';
 import { isValidAddress } from '@/lib/utils';
 import { toast } from 'sonner';
-import { Loader2, Search, Check, X, Ban } from 'lucide-react';
+import { Loader2, Search, Check, X, Ban, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { UserRoleStatus } from '@/lib/types';
 
-interface RoleStatus {
-    role: string;
+interface RoleStatus extends UserRoleStatus {
     roleName: string;
-    state: number;
-    account: string;
 }
 
 export function RoleManagement() {
-    const { isConnected } = useWeb3();
-    const [web3Service] = useState(() => new Web3Service());
+    const { isConnected, connectWallet, isLoading, web3Service, refreshRoles } = useWeb3();
     const [loading, setLoading] = useState(false);
     const [searchAddress, setSearchAddress] = useState('');
     const [userStatuses, setUserStatuses] = useState<RoleStatus[] | null>(null);
 
-    const roles = [
+    const roles = useMemo(() => [
         { value: getRoleConstants().FABRICANTE_ROLE, label: 'Fabricante' },
         { value: getRoleConstants().AUDITOR_HW_ROLE, label: 'Auditor HW' },
         { value: getRoleConstants().TECNICO_SW_ROLE, label: 'Técnico SW' },
         { value: getRoleConstants().ESCUELA_ROLE, label: 'Escuela' }
-    ];
+    ], []);
 
-    const handleSearch = async () => {
+    const handleSearch = useCallback(async () => {
         if (!isValidAddress(searchAddress)) {
             toast.error('Dirección inválida');
             return;
         }
 
+        if (!web3Service) {
+            toast.error('Servicio Web3 no disponible');
+            return;
+        }
+
         setLoading(true);
         try {
-            const statuses = await Promise.all(
+            // Check if the address has any roles by querying the contract
+            const userHasAnyRole = await Promise.all(
                 roles.map(async (role) => {
-                    const status = await web3Service.getRoleStatus(role.value, searchAddress) as any;
-                    return {
-                        role: role.value,
-                        roleName: role.label,
-                        state: Number(status.state),
-                        account: status.account
-                    };
+                    try {
+                        const status: UserRoleStatus = await web3Service.getRoleStatus(role.value, searchAddress);
+                        // Only return roles where the account is not zero address
+                        return status.account !== '0x0000000000000000000000000000000000000000' ? status : null;
+                    } catch (error) {
+                        // Ignore errors for addresses that don't have roles
+                        return null;
+                    }
                 })
             );
-            setUserStatuses(statuses);
-        } catch (error: any) {
-            toast.error('Error al buscar usuario', { description: error.message });
+
+            // Filter out null values and map to RoleStatus
+            const validStatuses = userHasAnyRole
+                .filter((status): status is UserRoleStatus => status !== null)
+                .map((status) => {
+                    const role = roles.find(r => r.value === status.role);
+                    return {
+                        ...status,
+                        roleName: role ? role.label : 'Rol Desconocido',
+                    };
+                });
+
+            setUserStatuses(validStatuses);
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+            toast.error('Error al buscar usuario', { 
+                description: errorMessage 
+            });
         } finally {
             setLoading(false);
         }
-    };
+    }, [searchAddress, web3Service, roles]);
 
     const handleAction = async (role: string, action: 'approve' | 'reject' | 'revoke') => {
-        if (!searchAddress) return;
+        if (!searchAddress || !web3Service) {
+            toast.error('Dirección o servicio no disponible');
+            return;
+        }
+
         setLoading(true);
         try {
             if (action === 'approve') {
@@ -83,14 +105,19 @@ export function RoleManagement() {
             }
             // Refresh
             await handleSearch();
-        } catch (error: any) {
-            toast.error('Error al procesar acción', { description: error.message });
+            // Refresh global roles
+            await refreshRoles();
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+            toast.error('Error al procesar acción', { 
+                description: errorMessage 
+            });
         } finally {
             setLoading(false);
         }
     };
 
-    const getStatusBadge = (status: any) => {
+    const getStatusBadge = (status: RoleStatus) => {
         if (status.account === '0x0000000000000000000000000000000000000000') {
             return <Badge variant="outline">No Solicitado</Badge>;
         }
@@ -103,17 +130,27 @@ export function RoleManagement() {
         }
     };
 
-    const getActions = (status: any) => {
+    const getActions = (status: RoleStatus) => {
         const isZeroAddress = status.account === '0x0000000000000000000000000000000000000000';
         if (isZeroAddress) return null;
 
         if (status.state === 0) { // Pending
             return (
                 <div className="flex gap-2">
-                    <Button size="sm" onClick={() => handleAction(status.role, 'approve')} disabled={loading} className="bg-green-600 hover:bg-green-700">
+                    <Button 
+                        size="sm" 
+                        onClick={() => handleAction(status.role, 'approve')} 
+                        disabled={loading} 
+                        className="bg-green-600 hover:bg-green-700"
+                    >
                         <Check className="w-4 h-4 mr-1" /> Aprobar
                     </Button>
-                    <Button size="sm" variant="destructive" onClick={() => handleAction(status.role, 'reject')} disabled={loading}>
+                    <Button 
+                        size="sm" 
+                        variant="destructive" 
+                        onClick={() => handleAction(status.role, 'reject')} 
+                        disabled={loading}
+                    >
                         <X className="w-4 h-4 mr-1" /> Rechazar
                     </Button>
                 </div>
@@ -122,7 +159,13 @@ export function RoleManagement() {
 
         if (status.state === 1) { // Approved
             return (
-                <Button size="sm" variant="outline" onClick={() => handleAction(status.role, 'revoke')} disabled={loading} className="text-red-600 hover:bg-red-50">
+                <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={() => handleAction(status.role, 'revoke')} 
+                    disabled={loading} 
+                    className="text-red-600 hover:bg-red-50"
+                >
                     <Ban className="w-4 h-4 mr-1" /> Revocar
                 </Button>
             );
@@ -131,7 +174,47 @@ export function RoleManagement() {
         return null;
     };
 
-    if (!isConnected) return null;
+    if (!isConnected) {
+      return (
+        <Card className="w-full">
+          <CardHeader>
+            <CardTitle>Gestión de Roles</CardTitle>
+            <CardDescription>
+              Conecta tu wallet de administrador para continuar
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center gap-4 py-8">
+            <Wallet className="w-12 h-12 text-muted-foreground" />
+            <Button
+              onClick={async () => {
+                try {
+                  await connectWallet();
+                  toast.success('Wallet conectada correctamente');
+                } catch (error) {
+                  toast.error('Error al conectar', {
+                    description: error instanceof Error ? error.message : 'Usuario rechazó la conexión'
+                  });
+                }
+              }}
+              disabled={isLoading}
+              className="w-full max-w-xs"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Conectando...
+                </>
+              ) : (
+                <>
+                  <Wallet className="w-4 h-4 mr-2" />
+                  Conectar Wallet
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      );
+    }
 
     return (
         <Card className="w-full">

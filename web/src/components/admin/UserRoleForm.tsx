@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useWeb3 } from '@/lib/contexts/Web3Context';
-import { Web3Service, getRoleConstants } from '@/lib/services/Web3Service';
+import { getRoleConstants } from '@/lib/services/Web3Service';
 import { isValidAddress } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -29,8 +29,7 @@ interface UserRoleFormProps {
 }
 
 export function UserRoleForm({ onRoleUpdated }: UserRoleFormProps) {
-  const { address, isConnected } = useWeb3();
-  const [web3Service] = useState(() => new Web3Service());
+  const { address, isConnected, web3Service } = useWeb3();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     role: '',
@@ -74,6 +73,11 @@ export function UserRoleForm({ onRoleUpdated }: UserRoleFormProps) {
     const error = validateForm();
     if (error) {
       toast.error(error);
+      return;
+    }
+
+    if (!web3Service) {
+      toast.error('Servicio Web3 no disponible');
       return;
     }
 

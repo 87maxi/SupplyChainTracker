@@ -1,0 +1,33 @@
+@startuml SupplyChainTracker - Netbook Lifecycle State Machine
+
+title Netbook Lifecycle State Machine
+
+state "FABRICADA" as Fabricada #lightblue
+state "HW_APROBADO" as HwAprobado #lightgreen
+state "SW_VALIDADO" as SwValidado #yellow
+state "DISTRIBUIDA" as Distribuida #lightcoral
+
+[*] --> Fabricada : registerNetbooks()
+
+Fabricada --> HwAprobado : auditHardware()\n(integrityPassed=true)
+HwAprobado --> SwValidado : validateSoftware()\n(validationPassed=true)
+SwValidado --> Distribuida : assignToStudent()
+
+' Invalid transitions (should be prevented by contract)
+Fabricada --> SwValidado : [INVALID]
+Fabricada --> Distribuida : [INVALID]
+HwAprobado --> Distribuida : [INVALID]
+
+' State descriptions
+note right of Fabricada : Manufacturer registers\nnetbook with serial,\nbatch, and model specs
+note right of HwAprobado : Hardware auditor\nverifies integrity\nand reports hash
+note right of SwValidado : Software technician\nvalidates OS installation\nand version
+note right of Distribuida : School assigns netbook\nto specific student\nwith hashed identifiers
+
+' Role permissions
+Fabricada : FABRICANTE_ROLE
+HwAprobado : AUDITOR_HW_ROLE
+SwValidado : TECNICO_SW_ROLE
+Distribuida : ESCUELA_ROLE
+
+@enduml

@@ -1,8 +1,10 @@
 import './globals.css';
 import { Header } from '@/components/layout/Header';
+import { Breadcrumbs } from '@/components/layout/Breadcrumbs';
 import { Providers } from '@/components/layout/Providers';
+import type { Metadata } from 'next';
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'SupplyChainTracker - Panel de Administración',
   description: 'Sistema de trazabilidad de netbooks educativas',
 };
@@ -19,6 +21,7 @@ export default function RootLayout({
           <div className="flex flex-col min-h-screen">
             <Header />
             <main className="flex-grow container mx-auto px-4 py-8">
+              <Breadcrumbs />
               {children}
             </main>
             <footer className="border-t">

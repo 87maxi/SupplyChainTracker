@@ -1,5 +1,6 @@
 "use client";
 
+import { ethers } from 'ethers';
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -41,25 +42,8 @@ export function formatDate(timestamp: number): string {
  * @returns Hash bytes32 del texto
  */
 export function stringToBytes32(text: string): string {
-  // Convierte el string a un hash SHA-256 y lo convierte a hexadecimal
-  const encoder = new TextEncoder();
-  const data = encoder.encode(text);
-
-  // En un entorno de navegador, podríamos usar crypto.subtle.digest
-  // Por ahora, devolvemos un padding simple del hash del string
-  let hash = '';
-  for (let i = 0; i < data.length; i++) {
-    const hex = data[i].toString(16);
-    hash += (hex.length === 1 ? '0' : '') + hex;
-  }
-
-  // Aseguramos que el hash tenga 66 caracteres (0x + 64 caracteres hex)
-  hash = hash.slice(0, 64);
-  while (hash.length < 64) {
-    hash += '0';
-  }
-
-  return '0x' + hash;
+  // Use ethers.keccak256 to generate a proper bytes32 hash
+  return ethers.keccak256(ethers.toUtf8Bytes(text));
 }
 
 /**
@@ -79,10 +63,10 @@ export function isValidAddress(address: string): boolean {
 export function getRoleName(role: string): string {
   const roles: Record<string, string> = {
     '0x0000000000000000000000000000000000000000000000000000000000000000': 'Admin Principal',
-    '0x98fc1341304b523375cd3a25cf3ad20857bdc79b4f3d9840965408e183229a5e': 'Fabricante',
-    '0x1ae41bc4402a4837bfe8f6d64908e31d2df7fcdf0e17b3d76ed0974e6eb1325e': 'Auditor HW',
-    '0xe1e7d626b0388606bd19894ab2a84c78416c5196d842ff58d27a646d12f2429c': 'Técnico SW',
-    '0x7b2721288b8eedd4036a78399b4e86844f712d69493f32437bcc722e59a39e7d': 'Escuela'
+    '0xbe0c84bfff967b2deb88bd0540d4a796d0ebfdcb72262ced26f1892b419e6457': 'Fabricante',
+    '0x49c0376dc7caa3eab0c186e9bc20bf968b0724fea74a37706c35f59bc5d8b15b': 'Auditor HW',
+    '0xeeb4ddf6a0e2f06cb86713282a0b88ee789709e92a08b9e9b4ce816bbb13fcaf': 'Técnico SW',
+    '0xa8f5858ea94a9ede7bc5dd04119dcc24b3b02a20be15d673993d8b6c2a901ef9': 'Escuela'
   };
 
   return roles[role] || 'Rol Desconocido';

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useWeb3 } from '@/lib/contexts/Web3Context';
-import { Web3Service } from '@/lib/services/Web3Service';
+// Removed unused import
 import { toast } from 'sonner';
 import { Netbook } from '@/lib/types';
 
@@ -14,8 +14,7 @@ interface NetbookSearchProps {
 }
 
 export function NetbookSearch({ onNetbookFound }: NetbookSearchProps) {
-  const { isConnected } = useWeb3();
-  const [web3Service] = useState(() => new Web3Service());
+  const { isConnected, web3Service } = useWeb3();
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -27,9 +26,14 @@ export function NetbookSearch({ onNetbookFound }: NetbookSearchProps) {
       return;
     }
 
+    if (!web3Service) {
+      toast.error('Servicio no disponible');
+      return;
+    }
+
     setLoading(true);
     try {
-      const report = await web3Service.getNetbookReport(searchTerm.trim()) as Netbook;
+      const report = await web3Service.getNetbookReport(searchTerm.trim());
       onNetbookFound(report);
       toast.success('Netbook encontrada', {
         description: `Número de serie: ${searchTerm}`

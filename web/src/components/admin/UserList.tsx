@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   Card,
   CardContent,
@@ -10,56 +10,51 @@ import {
 } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useWeb3 } from '@/lib/contexts/Web3Context';
-import { Web3Service, getRoleConstants } from '@/lib/services/Web3Service';
+import { getRoleConstants } from '@/lib/services/Web3Service';
 import { getRoleName, formatDate } from '@/lib/utils';
 import { UserRoleStatus } from '@/lib/types';
 
 export function UserList() {
-  const { isConnected } = useWeb3();
-  const [web3Service] = useState(() => new Web3Service());
+  const { isConnected, address, web3Service } = useWeb3();
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<UserRoleStatus[]>([]);
 
-  const roles = [
+  const roles = useMemo(() => [
     getRoleConstants().FABRICANTE_ROLE,
     getRoleConstants().AUDITOR_HW_ROLE,
     getRoleConstants().TECNICO_SW_ROLE,
     getRoleConstants().ESCUELA_ROLE
-  ];
+  ], []);
 
-  useEffect(() => {
+useEffect(() => {
     const fetchUsers = async () => {
-      if (!isConnected) return;
+      if (!isConnected || !address || !web3Service) {
+        setLoading(false);
+        return;
+      }
 
       setLoading(true);
       try {
         const usersWithRoles: UserRoleStatus[] = [];
 
-        // In a real implementation, we would fetch this from an indexer or events
-        // For now we'll check some mock addresses or recently interacted addresses
-        const mockAddresses = [
-          '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
-          '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-          '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC'
-        ];
-
-        for (const addr of mockAddresses) {
-          for (const role of roles) {
-            try {
-              const status = await web3Service.getRoleStatus(role, addr) as UserRoleStatus;
-              if (status.state > 0) { // Only add if approved
-                usersWithRoles.push({
-                  role,
-                  account: status.account,
-                  state: Number(status.state),
-                  approvalTimestamp: status.approvalTimestamp,
-                  approvedBy: status.approvedBy
-                });
-              }
-            } catch {
-              // Ignore errors for addresses that don't have roles
-              continue;
+        // Check for pending requests by listening to events or checking common addresses
+        // For now, we'll check the connected user's address
+        for (const role of roles) {
+          try {
+            const status = await web3Service.getRoleStatus(role, address);
+            if (status.state > 0 && status.account !== '0x0000000000000000000000000000000000000000') { // Only add if approved and account is valid
+              usersWithRoles.push({
+                role,
+                account: status.account,
+                state: Number(status.state),
+                approvalTimestamp: status.approvalTimestamp,
+                approvedBy: status.approvedBy
+              });
             }
+          } catch (error) {
+            // Log error but continue with other roles
+            console.error(`Error fetching status for role ${role}:`, error);
+            continue;
           }
         }
 
@@ -72,7 +67,9 @@ export function UserList() {
     };
 
     fetchUsers();
-  }, [isConnected, web3Service, roles]);
+  }, [isConnected, address, web3Service, roles]);
+
+  // Remove auto-refresh to prevent excessive requests
 
   if (!isConnected) {
     return (

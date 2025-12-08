@@ -41,24 +41,18 @@ export PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4
 echo -e "${YELLOW}Compilando contrato...${NC}"
 forge build
 
-# Desplegar el contrato
+# Desplegar el contrato usando el script de Foundry
 echo -e "${YELLOW}Desplegando contrato...${NC}"
-DEPLOY_OUTPUT=$(forge create --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast src/SupplyChainTracker.sol:SupplyChainTracker)
+DEPLOY_OUTPUT=$(forge script script/Deploy.s.sol:DeployScript --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast -v)
 
-# Extraer la dirección del contrato desplegado
-CONTRACT_ADDRESS=$(echo "$DEPLOY_OUTPUT" | grep "Deployed to:" | awk '{print $3}')
+# Extraer la dirección del contrato desplegado desde el output
+CONTRACT_ADDRESS=$(echo "$DEPLOY_OUTPUT" | grep "Contrato desplegado en:" | awk '{print $4}')
 
 if [ -z "$CONTRACT_ADDRESS" ]; then
     echo -e "${RED}Error: No se pudo extraer la dirección del contrato${NC}"
     echo "Output completo:"
     echo "$DEPLOY_OUTPUT"
-    echo -e "${YELLOW}Intentando extraer dirección de forma alternativa...${NC}"
-    CONTRACT_ADDRESS=$(echo "$DEPLOY_OUTPUT" | grep -o '0x[a-fA-F0-9]\{40\}' | head -n 1)
-    
-    if [ -z "$CONTRACT_ADDRESS" ]; then
-        echo -e "${RED}Error: No se pudo encontrar la dirección del contrato${NC}"
-        exit 1
-    fi
+    exit 1
 fi
 
 echo -e "${GREEN}✅ Contrato desplegado en: $CONTRACT_ADDRESS${NC}"
@@ -68,13 +62,17 @@ cat > .env << EOF
 RPC_URL=$RPC_URL
 CONTRACT_ADDRESS=$CONTRACT_ADDRESS
 ADMIN_PRIVATE_KEY=$PRIVATE_KEY
+FABRICANTE_PRIVATE_KEY=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+AUDITOR_PRIVATE_KEY=0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a
+TECNICO_PRIVATE_KEY=0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6
+ESCUELA_PRIVATE_KEY=0x47e179ec1974ba0e4c49e4b10d0b2e124a6b1d8e0f7d6b1a4f8c0a0d4c9d0b3e
 EOF
 
 echo -e "${GREEN}✅ Archivo .env creado con la configuración${NC}"
 
 # Mostrar información de las cuentas de anvil
 echo -e "${YELLOW}Cuentas disponibles en anvil:${NC}"
-curl -s -X POST --data '{"jsonrpc":"2.0","method":"eth_accounts","params":[],"id":1}' $RPC_URL | jq -r '.result[]'
+curl -s -H "Content-Type: application/json" -X POST --data '{"jsonrpc":"2.0","method":"eth_accounts","params":[],"id":1}' $RPC_URL | python3 -c "import sys, json; data = json.load(sys.stdin); [print(acc) for acc in data.get('result', [])]"
 
 echo -e "${GREEN}✅ Deploy completado exitosamente!${NC}"
 echo -e "${YELLOW}Contrato: $CONTRACT_ADDRESS${NC}"

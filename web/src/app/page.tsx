@@ -4,9 +4,18 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { useWeb3 } from '@/lib/contexts/Web3Context';
 import { ArrowRight, ShieldCheck, Laptop, School } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 export default function LandingPage() {
-  const { isConnected, connect } = useWeb3();
+  const { isConnected, connectWallet, isLoading } = useWeb3();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isConnected) {
+      router.push('/dashboard');
+    }
+  }, [isConnected, router]);
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-4rem)]">
@@ -28,8 +37,19 @@ export default function LandingPage() {
                 </Button>
               </Link>
             ) : (
-              <Button size="lg" onClick={connect} className="gap-2">
-                Conectar Wallet <ArrowRight className="w-4 h-4" />
+              <Button 
+                size="lg" 
+                onClick={async () => {
+                  try {
+                    await connectWallet();
+                  } catch (error) {
+                    console.error('Connection error:', error);
+                  }
+                }} 
+                disabled={isLoading}
+                className="gap-2"
+              >
+                {isLoading ? 'Conectando...' : 'Conectar Wallet'} <ArrowRight className="w-4 h-4" />
               </Button>
             )}
             <Link href="/about">
