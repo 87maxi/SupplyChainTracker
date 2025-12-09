@@ -55,6 +55,13 @@ export function RoleRequest() {
             description: 'Receptora final de los equipos. Confirma recepción y estado.'
         }
     ], []);
+    
+    const [dynamicRoles, setDynamicRoles] = useState<Array<{
+        value: string;
+        label: string;
+        icon: React.ComponentType<{ className?: string }>;
+        description: string;
+    }>>(roles);
 
     // Create a stable function to fetch statuses
     const fetchStatuses = useCallback(async () => {
@@ -98,10 +105,22 @@ export function RoleRequest() {
             toast.success('Solicitud enviada con éxito', {
                 description: `Transacción: ${txHash.slice(0, 10)}...`
             });
+            
+            // Optimistically update the UI
+            setRoleStatuses(prev => prev.map(status => 
+                status.role === role 
+                    ? { ...status, state: 0, account: address || '0x0000000000000000000000000000000000000000' }
+                    : status
+            ));
+            
+            // Then fetch the actual status
             await fetchStatuses();
         } catch (error: unknown) {
             const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
             toast.error('Error al enviar solicitud', { description: errorMessage });
+            
+            // Revert optimistic update on error
+            await fetchStatuses();
         } finally {
             setLoadingStates(prev => ({ ...prev, [role]: false }));
         }
@@ -203,7 +222,7 @@ export function RoleRequest() {
             ) : (
                 <div className="grid gap-4 md:grid-cols-2">
                     {roleStatuses.map((status) => {
-                        const roleData = roles.find(r => r.value === status.role);
+                        const roleData = dynamicRoles.find(r => r.value === status.role);
                         const IconComponent = roleData?.icon;
                         const statusInfo = getStatusInfo(status);
                         const StatusIcon = statusInfo.icon;

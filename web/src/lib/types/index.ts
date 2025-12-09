@@ -1,4 +1,5 @@
 import { ethers, Signer } from 'ethers';
+import { Web3Service } from '../services/Web3Service';
 
 export interface Role {
   name: string;
@@ -95,24 +96,4 @@ export interface NetbookReport {
   state: number;
 }
 
-// Forward declaration for Web3Service to avoid circular dependency
-// The actual class will be imported in Web3Context.tsx
-export declare class Web3Service {
-  constructor(signer: Signer | null);
-  hasRole(role: string, account: string): Promise<boolean>;
-  getRoleStatus(role: string, account: string): Promise<UserRoleStatus>;
-  getAllPendingRoleRequests(): Promise<UserRoleStatus[]>;
-  grantRole(role: string, account: string): Promise<string>;
-  revokeRole(role: string, account: string): Promise<string>;
-  getNetbookReport(serialNumber: string): Promise<NetbookReport>;
-  getNetbookState(serialNumber: string): Promise<number>;
-  registerNetbooks(serialNumbers: string[], batchIds: string[], modelSpecs: string[]): Promise<string>;
-  auditHardware(serialNumber: string, integrityPassed: boolean, reportHash: string): Promise<string>;
-  validateSoftware(serialNumber: string, osVersion: string, validationPassed: boolean): Promise<string>;
-  requestRoleApproval(role: string): Promise<string>;
-  approveRole(role: string, account: string): Promise<string>;
-  rejectRole(role: string, account: string): Promise<string>;
-  cancelRoleRequest(role: string): Promise<string>;
-  revokeRoleApproval(role: string, account: string): Promise<string>;
-  assignToStudent(serialNumber: string, schoolHash: string, studentHash: string): Promise<string>;
-}
+export { Web3Service } from '../services/Web3Service';

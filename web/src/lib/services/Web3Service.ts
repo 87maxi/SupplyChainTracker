@@ -14,7 +14,7 @@ const RPC_URL: string = process.env.NEXT_PUBLIC_RPC_URL || 'http://localhost:854
  * It uses the provided signer for transactions and a read-only provider for view functions.
  */
 export class Web3Service {
-  private readOnlyContract: ethers.Contract;
+  public readOnlyContract: ethers.Contract;
   private signer: Signer | null;
 
   /**
@@ -26,8 +26,6 @@ export class Web3Service {
     }
 
     this.signer = signer;
-
-    
 
     // Dedicated read-only contract using JsonRpcProvider for efficiency
     const readOnlyProvider = new ethers.JsonRpcProvider(RPC_URL);
@@ -168,6 +166,67 @@ export class Web3Service {
     }
   }
 
+  async getRoleAdmin(role: string): Promise<string> {
+    try {
+      const result = await this.readOnlyContract.getRoleAdmin(role);
+      return result as string;
+    } catch (error) {
+      console.error('Error getting role admin:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getPendingRequestIndex(role: string, account: string): Promise<number> {
+    try {
+      const result = await this.readOnlyContract.pendingRequestIndex(role, account);
+      return Number(result);
+    } catch (error) {
+      console.error('Error getting pending request index:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getPendingRequest(index: number): Promise<{ role: string; account: string }> {
+    try {
+      const result = await this.readOnlyContract.pendingRequests(index);
+      return {
+        role: result[0] as string,
+        account: result[1] as string
+      };
+    } catch (error) {
+      console.error('Error getting pending request:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async getRoleApproval(role: string, account: string): Promise<UserRoleStatus> {
+    try {
+      const result = await this.readOnlyContract.roleApprovals(role, account);
+      
+      // Explicitly convert BigInts to string/number for frontend compatibility
+      return {
+        role: result[0] as string,
+        account: result[1] as string,
+        state: Number(result[2]), // Convert BigInt to number (0: Pending, 1: Approved, 2: Rejected, 3: Canceled)
+        approvalTimestamp: result[3].toString(), // Convert BigInt timestamp to string
+        approvedBy: result[4] as string,
+      };
+    } catch (error) {
+      console.error('Error getting role approval:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  async supportsInterface(interfaceId: string): Promise<boolean> {
+    try {
+      const result = await this.readOnlyContract.supportsInterface(interfaceId);
+      return Boolean(result);
+    } catch (error) {
+      console.error('Error checking interface support:', error);
+      throw this.handleError(error);
+    }
+  }
+
   // --- Contract interaction methods (Transaction/Write) ---
 
   async grantRole(role: string, account: string): Promise<string> {
@@ -217,7 +276,9 @@ export class Web3Service {
   ): Promise<string> {
     try {
       const contract = await this.getContractWithSigner();
-      const tx = await contract.auditHardware(serialNumber, integrityPassed, reportHash);
+      // Convert string to bytes32 if needed
+      const formattedReportHash = reportHash.startsWith('0x') ? reportHash : `0x${reportHash}`;
+      const tx = await contract.auditHardware(serialNumber, integrityPassed, formattedReportHash);
       await tx.wait();
       return tx.hash;
     } catch (error) {
@@ -302,6 +363,18 @@ export class Web3Service {
     }
   }
 
+  async renounceRole(role: string, callerConfirmation: string): Promise<string> {
+    try {
+      const contract = await this.getContractWithSigner();
+      const tx = await contract.renounceRole(role, callerConfirmation);
+      await tx.wait();
+      return tx.hash;
+    } catch (error) {
+      console.error('Error renouncing role:', error);
+      throw this.handleError(error);
+    }
+  }
+
   async assignToStudent(
     serialNumber: string,
     schoolHash: string,
@@ -309,7 +382,10 @@ export class Web3Service {
   ): Promise<string> {
     try {
       const contract = await this.getContractWithSigner();
-      const tx = await contract.assignToStudent(serialNumber, schoolHash, studentHash);
+      // Convert strings to bytes32 if needed
+      const formattedSchoolHash = schoolHash.startsWith('0x') ? schoolHash : `0x${schoolHash}`;
+      const formattedStudentHash = studentHash.startsWith('0x') ? studentHash : `0x${studentHash}`;
+      const tx = await contract.assignToStudent(serialNumber, formattedSchoolHash, formattedStudentHash);
       await tx.wait();
       return tx.hash;
     } catch (error) {
@@ -354,6 +430,37 @@ export const getRoleConstants = () => ({
   TECNICO_SW_ROLE: '0xeeb4ddf6a0e2f06cb86713282a0b88ee789709e92a08b9e9b4ce816bbb13fcaf',
   ESCUELA_ROLE: '0xa8f5858ea94a9ede7bc5dd04119dcc24b3b02a20be15d673993d8b6c2a901ef9'
 });
+
+// Async function to fetch role constants from contract
+export const fetchRoleConstants = async (web3Service: Web3Service) => {
+  try {
+    const [
+      DEFAULT_ADMIN_ROLE,
+      FABRICANTE_ROLE,
+      AUDITOR_HW_ROLE,
+      TECNICO_SW_ROLE,
+      ESCUELA_ROLE
+    ] = await Promise.all([
+      web3Service.readOnlyContract.DEFAULT_ADMIN_ROLE(),
+      web3Service.readOnlyContract.FABRICANTE_ROLE(),
+      web3Service.readOnlyContract.AUDITOR_HW_ROLE(),
+      web3Service.readOnlyContract.TECNICO_SW_ROLE(),
+      web3Service.readOnlyContract.ESCUELA_ROLE()
+    ]);
+    
+    return {
+      DEFAULT_ADMIN_ROLE,
+      FABRICANTE_ROLE,
+      AUDITOR_HW_ROLE,
+      TECNICO_SW_ROLE,
+      ESCUELA_ROLE
+    };
+  } catch (error) {
+    console.error('Error fetching role constants from contract:', error);
+    // Fallback to hardcoded values
+    return getRoleConstants();
+  }
+};
 
 // Helper function to get netbook state labels
 export const getNetbookState = getNetbookStateInfo;

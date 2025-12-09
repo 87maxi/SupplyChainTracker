@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useWeb3 } from '@/lib/contexts/Web3Context';
-import { getRoleConstants } from '@/lib/services/Web3Service';
+import { getRoleConstants, fetchRoleConstants } from '@/lib/services/Web3Service';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +24,7 @@ import {
   Eye,
   UserCheck
 } from 'lucide-react';
+import { RoleDetailsModal } from '@/components/admin/RoleDetailsModal';
 
 interface RoleRequest {
   id: string;
@@ -53,7 +54,7 @@ const roleInfo = {
 };
 
 export function AdminRoleDashboard() {
-  const { web3Service, address: adminAddress, refreshRoles } = useWeb3();
+const { web3Service, address: adminAddress, refreshRoles } = useWeb3();
   const [loading, setLoading] = useState(true);
   const [requests, setRequests] = useState<RoleRequest[]>([]);
   const [stats, setStats] = useState<UserStats>({
@@ -67,6 +68,9 @@ export function AdminRoleDashboard() {
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'all'>('pending');
+  const [selectedRequest, setSelectedRequest] = useState<RoleRequest | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [dynamicRoleInfo, setDynamicRoleInfo] = useState<Record<string, { name: string; icon: React.ComponentType<{ className?: string }>; color: string }>>({});
 
   // Fetch all role requests and stats
   const fetchData = useCallback(async () => {
@@ -74,17 +78,36 @@ export function AdminRoleDashboard() {
 
     setLoading(true);
     try {
+      // Fetch role constants first
+      let roleConstants;
+      try {
+        roleConstants = await fetchRoleConstants(web3Service);
+      } catch (error) {
+        console.error('Error fetching role constants:', error);
+        // Fallback to hardcoded values
+        roleConstants = getRoleConstants();
+      }
+      
+      // Create dynamic role info mapping
+      const dynamicRoleInfo = {
+        [roleConstants.FABRICANTE_ROLE]: { name: 'Fabricante', icon: Factory, color: 'bg-blue-500' },
+        [roleConstants.AUDITOR_HW_ROLE]: { name: 'Auditor HW', icon: HardDrive, color: 'bg-green-500' },
+        [roleConstants.TECNICO_SW_ROLE]: { name: 'Técnico SW', icon: Cpu, color: 'bg-orange-500' },
+        [roleConstants.ESCUELA_ROLE]: { name: 'Escuela', icon: School, color: 'bg-pink-500' }
+      };
+
       // Fetch all pending requests from the contract
       const pendingRequestsData = await web3Service.getAllPendingRoleRequests();
 
       const roleRequests: RoleRequest[] = pendingRequestsData.map(status => {
-        const normalizedRole = status.role.toLowerCase();
-        const roleData = roleInfo[normalizedRole as keyof typeof roleInfo];
+        // Don't normalize the role since they are bytes32 hashes
+        const role = status.role;
+        const roleData = dynamicRoleInfo[role];
 
         return {
-          id: `${normalizedRole}-${status.account}`,
+          id: `${role}-${status.account}`,
           address: status.account,
-          role: normalizedRole,
+          role: role,
           roleName: roleData?.name || 'Rol Desconocido',
           roleIcon: roleData?.icon || Users,
           state: status.state,
@@ -98,10 +121,25 @@ export function AdminRoleDashboard() {
       const activeUsers = roleRequests.filter(r => r.state === 1).length;
       const totalUsers = roleRequests.length;
 
-      // For demo purposes, we'll set some dummy values for today's stats
-      // In a real implementation, you would check the actual approval timestamps
-      const approvedToday = roleRequests.filter(r => r.state === 1).length;
-      const rejectedToday = roleRequests.filter(r => r.state === 2).length;
+      // Calculate today's stats based on actual timestamps
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const approvedToday = roleRequests.filter(r => {
+        if (r.state !== 1) return false;
+        if (!r.approvalTimestamp) return false;
+        const approvalDate = new Date(r.approvalTimestamp);
+        approvalDate.setHours(0, 0, 0, 0);
+        return approvalDate.getTime() === today.getTime();
+      }).length;
+      
+      const rejectedToday = roleRequests.filter(r => {
+        if (r.state !== 2) return false;
+        if (!r.approvalTimestamp) return false;
+        const rejectionDate = new Date(r.approvalTimestamp);
+        rejectionDate.setHours(0, 0, 0, 0);
+        return rejectionDate.getTime() === today.getTime();
+      }).length;
 
       setStats({
         totalUsers,
@@ -112,6 +150,7 @@ export function AdminRoleDashboard() {
       });
 
       setRequests(roleRequests);
+      setDynamicRoleInfo(dynamicRoleInfo);
 
     } catch (error) {
       console.error('Error fetching admin data:', error);
@@ -119,11 +158,23 @@ export function AdminRoleDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [web3Service, adminAddress]);
+  }, [web3Service]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const handleViewDetails = (request: RoleRequest) => {
+    setSelectedRequest(request);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedRequest(null);
+    // Refresh data after modal closes
+    fetchData();
+  };
 
   // Filter requests based on search and filters
   const filteredRequests = useMemo(() => {
@@ -167,8 +218,9 @@ export function AdminRoleDashboard() {
         approvedToday: prev.approvedToday + 1
       }));
 
-      // Refresh global user roles to update the approved user's status
-      await refreshRoles();
+      // Don't refresh roles immediately to prevent recursive calls
+      // The user's role status will be updated when they next visit their profile
+      // or when the page is refreshed
 
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
@@ -204,6 +256,8 @@ export function AdminRoleDashboard() {
         pendingRequests: prev.pendingRequests - 1,
         rejectedToday: prev.rejectedToday + 1
       }));
+
+      // Don't refresh roles immediately to prevent recursive calls
 
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
@@ -381,7 +435,7 @@ export function AdminRoleDashboard() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos los roles</SelectItem>
-                  {Object.entries(roleInfo).map(([role, info]) => (
+                  {Object.entries(dynamicRoleInfo).map(([role, info]) => (
                     <SelectItem key={role} value={role}>
                       {info.name}
                     </SelectItem>
@@ -430,7 +484,7 @@ export function AdminRoleDashboard() {
                         <CardContent className="p-6">
                           <div className="flex items-start justify-between">
                             <div className="flex items-start gap-4">
-                              <div className={`p-3 rounded-lg ${roleInfo[request.role as keyof typeof roleInfo]?.color || 'bg-gray-500'} text-white`}>
+                              <div className={`p-3 rounded-lg ${dynamicRoleInfo[request.role]?.color || 'bg-gray-500'} text-white`}>
                                 <request.roleIcon className="w-6 h-6" />
                               </div>
                               <div className="space-y-2">
@@ -496,7 +550,7 @@ export function AdminRoleDashboard() {
                         <CardContent className="p-6">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-4">
-                              <div className={`p-3 rounded-lg ${roleInfo[request.role as keyof typeof roleInfo]?.color || 'bg-gray-500'} text-white`}>
+                              <div className={`p-3 rounded-lg ${dynamicRoleInfo[request.role]?.color || 'bg-gray-500'} text-white`}>
                                 <request.roleIcon className="w-6 h-6" />
                               </div>
                               <div>
@@ -510,7 +564,7 @@ export function AdminRoleDashboard() {
                                 </div>
                               </div>
                             </div>
-                            <Button variant="outline" size="sm">
+                            <Button variant="outline" size="sm" onClick={() => handleViewDetails(request)}>
                               <Eye className="w-4 h-4" />
                               Ver Detalles
                             </Button>
@@ -545,9 +599,9 @@ export function AdminRoleDashboard() {
                       <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-4">
-                            <div className={`p-3 rounded-lg ${roleInfo[request.role as keyof typeof roleInfo]?.color || 'bg-gray-500'} text-white`}>
-                              <request.roleIcon className="w-6 h-6" />
-                            </div>
+<div className={`p-3 rounded-lg ${dynamicRoleInfo[request.role]?.color || 'bg-gray-500'} text-white`}>
+                                <request.roleIcon className="w-6 h-6" />
+                              </div>
                             <div>
                               <h3 className="font-semibold">{request.roleName}</h3>
                               <p className="text-sm text-muted-foreground font-mono">
@@ -581,7 +635,7 @@ export function AdminRoleDashboard() {
                                 </Button>
                               </div>
                             )}
-                            <Button variant="outline" size="sm">
+                            <Button variant="outline" size="sm" onClick={() => handleViewDetails(request)}>
                               <Eye className="w-4 h-4" />
                             </Button>
                           </div>
@@ -595,6 +649,11 @@ export function AdminRoleDashboard() {
           )}
         </div>
       </div>
+      <RoleDetailsModal 
+        isOpen={isModalOpen} 
+        onClose={handleCloseModal} 
+        request={selectedRequest} 
+      />
     </div>
   );
 }

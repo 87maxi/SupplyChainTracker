@@ -24,10 +24,21 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
     return new Web3Service(signer);
   }, [signer]);
 
-  // Function to check and refresh user roles
+// Function to check and refresh user roles
   const checkRoles = useCallback(async () => {
     console.log('=== CHECKING ROLES ===');
     console.log('Connected address:', address);
+    
+    // Simple debounce - prevent multiple rapid refreshes
+    const now = Date.now();
+    const lastRefresh = (window as any).__lastRoleRefresh || 0;
+    
+    if (now - lastRefresh < 1000) {
+      console.log('Skipping role refresh - too soon');
+      return;
+    }
+    
+    (window as any).__lastRoleRefresh = now;
 
     if (isConnected && address && web3Service) {
       try {
@@ -56,19 +67,14 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
           school: schoolResult
         });
 
-        const anyOperationalRole = manufacturerResult || auditorResult || technicianResult || schoolResult;
-        const finalHasAnyRole = defaultAdminResult || anyOperationalRole;
-
         setIsDefaultAdmin(defaultAdminResult);
         setIsManufacturer(manufacturerResult);
         setIsAuditor(auditorResult);
         setIsTechnician(technicianResult);
         setIsSchool(schoolResult);
 
-        // Admin is true if Default Admin OR any operational role (legacy support)
-        // You might want to refine this definition depending on requirements
-        setIsAdmin(defaultAdminResult || anyOperationalRole);
-
+        const finalHasAnyRole = defaultAdminResult || manufacturerResult || auditorResult || technicianResult || schoolResult;
+        setIsAdmin(defaultAdminResult || finalHasAnyRole);
         setHasAnyRole(finalHasAnyRole);
 
       } catch (error) {
@@ -103,6 +109,16 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
 
   // Function to manually refresh roles (useful after role approvals)
   const refreshRoles = useCallback(async () => {
+    // Simple debounce - prevent multiple rapid refreshes
+    const now = Date.now();
+    const lastRefresh = (window as any).__lastRoleRefresh || 0;
+    
+    if (now - lastRefresh < 1000) {
+      console.log('Skipping role refresh - too soon');
+      return;
+    }
+    
+    (window as any).__lastRoleRefresh = now;
     await checkRoles();
   }, [checkRoles]);
 
