@@ -74,7 +74,7 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
         setIsSchool(schoolResult);
 
         const finalHasAnyRole = defaultAdminResult || manufacturerResult || auditorResult || technicianResult || schoolResult;
-        setIsAdmin(defaultAdminResult || finalHasAnyRole);
+        setIsAdmin(defaultAdminResult);  // Only users with DEFAULT_ADMIN_ROLE are admins
         setHasAnyRole(finalHasAnyRole);
 
       } catch (error) {
@@ -115,7 +115,8 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
     
     if (now - lastRefresh < 1000) {
       console.log('Skipping role refresh - too soon');
-      return;
+      // For testing, let's allow refresh but with a warning
+      console.log('Bypassing debounce for testing - forcing refresh');
     }
     
     (window as any).__lastRoleRefresh = now;

@@ -74,14 +74,20 @@ const { web3Service, address: adminAddress, refreshRoles } = useWeb3();
 
   // Fetch all role requests and stats
   const fetchData = useCallback(async () => {
-    if (!web3Service) return;
+    console.log('Fetching admin data...');
+    if (!web3Service) {
+      console.log('No web3Service available');
+      return;
+    }
 
     setLoading(true);
     try {
+      console.log('Fetching role constants...');
       // Fetch role constants first
       let roleConstants;
       try {
         roleConstants = await fetchRoleConstants(web3Service);
+        console.log('Role constants fetched:', roleConstants);
       } catch (error) {
         console.error('Error fetching role constants:', error);
         // Fallback to hardcoded values
@@ -96,13 +102,16 @@ const { web3Service, address: adminAddress, refreshRoles } = useWeb3();
         [roleConstants.ESCUELA_ROLE]: { name: 'Escuela', icon: School, color: 'bg-pink-500' }
       };
 
+      console.log('Fetching pending requests...');
       // Fetch all pending requests from the contract
       const pendingRequestsData = await web3Service.getAllPendingRoleRequests();
+      console.log('Pending requests data:', pendingRequestsData);
 
       const roleRequests: RoleRequest[] = pendingRequestsData.map(status => {
         // Don't normalize the role since they are bytes32 hashes
         const role = status.role;
         const roleData = dynamicRoleInfo[role];
+        console.log('Processing role:', { role, roleData, status });
 
         return {
           id: `${role}-${status.account}`,
@@ -115,6 +124,8 @@ const { web3Service, address: adminAddress, refreshRoles } = useWeb3();
           approvedBy: status.approvedBy
         };
       });
+
+      console.log('Processed role requests:', roleRequests);
 
       // Calculate stats based on the requests we found
       const pendingRequests = roleRequests.filter(r => r.state === 0).length;
@@ -141,6 +152,14 @@ const { web3Service, address: adminAddress, refreshRoles } = useWeb3();
         return rejectionDate.getTime() === today.getTime();
       }).length;
 
+      console.log('Stats calculated:', {
+        totalUsers,
+        activeUsers,
+        pendingRequests,
+        approvedToday,
+        rejectedToday
+      });
+
       setStats({
         totalUsers,
         activeUsers,
@@ -151,12 +170,14 @@ const { web3Service, address: adminAddress, refreshRoles } = useWeb3();
 
       setRequests(roleRequests);
       setDynamicRoleInfo(dynamicRoleInfo);
+      console.log('State updated successfully');
 
     } catch (error) {
       console.error('Error fetching admin data:', error);
       toast.error('Error al cargar los datos de administración');
     } finally {
       setLoading(false);
+      console.log('Finished fetching admin data');
     }
   }, [web3Service]);
 
@@ -170,6 +191,7 @@ const { web3Service, address: adminAddress, refreshRoles } = useWeb3();
   };
 
   const handleCloseModal = () => {
+    console.log('Closing modal and refreshing data');
     setIsModalOpen(false);
     setSelectedRequest(null);
     // Refresh data after modal closes
@@ -190,10 +212,39 @@ const { web3Service, address: adminAddress, refreshRoles } = useWeb3();
     });
   }, [requests, searchTerm, roleFilter, statusFilter]);
 
-  const handleApprove = async (requestId: string, userAddress: string, role: string) => {
+const handleApprove = async (requestId: string, userAddress: string, role: string) => {
     if (!web3Service) return;
 
+    console.log('Approving role:', { 
+      requestId, 
+      userAddress, 
+      role,
+      adminAddress,
+      roleType: typeof role,
+      addressType: typeof userAddress
+    });
+
+    // Validate parameters
+    if (!role || role === '0x0000000000000000000000000000000000000000000000000000000000000000') {
+      console.error('Invalid role:', role);
+      toast.error('Error al aprobar solicitud', {
+        description: 'Rol inválido'
+      });
+      return;
+    }
+
+    if (!userAddress || userAddress === '0x0000000000000000000000000000000000000000') {
+      console.error('Invalid user address:', userAddress);
+      toast.error('Error al aprobar solicitud', {
+        description: 'Dirección de usuario inválida'
+      });
+      return;
+    }
+
     try {
+      // Add a small delay to ensure the request is fully processed on chain
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
       await web3Service.approveRole(role, userAddress);
       toast.success('Solicitud aprobada correctamente');
 
@@ -218,12 +269,33 @@ const { web3Service, address: adminAddress, refreshRoles } = useWeb3();
         approvedToday: prev.approvedToday + 1
       }));
 
-      // Don't refresh roles immediately to prevent recursive calls
-      // The user's role status will be updated when they next visit their profile
-      // or when the page is refreshed
+      // Refresh the data immediately to get blockchain state
+      console.log('Refreshing data immediately after approval');
+      fetchData();
 
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+    } catch (error: any) {
+      console.error('Error approving role:', error);
+      console.error('Error details:', {
+        message: error?.message,
+        code: error?.code,
+        reason: error?.reason,
+        stack: error?.stack,
+        requestId,
+        userAddress,
+        role,
+        adminAddress
+      });
+      
+      // Log additional error details if available
+      if (error?.error) {
+        console.error('Nested error:', error.error);
+      }
+      
+      if (error?.data) {
+        console.error('Error data:', error.data);
+      }
+      
+      const errorMessage = error?.message || error?.reason || 'Error desconocido';
       toast.error('Error al aprobar solicitud', {
         description: errorMessage
       });
@@ -257,7 +329,9 @@ const { web3Service, address: adminAddress, refreshRoles } = useWeb3();
         rejectedToday: prev.rejectedToday + 1
       }));
 
-      // Don't refresh roles immediately to prevent recursive calls
+      // Refresh the data immediately to get blockchain state
+      console.log('Refreshing data immediately after rejection');
+      fetchData();
 
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
@@ -652,6 +726,7 @@ const { web3Service, address: adminAddress, refreshRoles } = useWeb3();
       <RoleDetailsModal 
         isOpen={isModalOpen} 
         onClose={handleCloseModal} 
+        onRequestRefresh={fetchData}
         request={selectedRequest} 
       />
     </div>

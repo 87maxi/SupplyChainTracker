@@ -24,6 +24,7 @@ import { toast } from 'sonner';
 interface RoleDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onRequestRefresh?: () => void;
   request: {
     id: string;
     address: string;
@@ -88,8 +89,14 @@ export function RoleDetailsModal({ isOpen, onClose, request }: RoleDetailsModalP
     try {
       await web3Service.approveRole(request.role, request.address);
       toast.success('Solicitud aprobada correctamente');
-      // Don't refresh roles to prevent recursive calls
+      // Don't refresh roles to prevent recursive calls, but update local state
       await fetchRoleStatus();
+      
+      // Notify parent to refresh data
+      if (onRequestRefresh) {
+        onRequestRefresh();
+      }
+      // Close modal immediately since we've notified parent
       onClose();
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
@@ -106,8 +113,14 @@ export function RoleDetailsModal({ isOpen, onClose, request }: RoleDetailsModalP
     try {
       await web3Service.rejectRole(request.role, request.address);
       toast.success('Solicitud rechazada correctamente');
-      // Don't refresh roles to prevent recursive calls
+      // Don't refresh roles to prevent recursive calls, but update local state
       await fetchRoleStatus();
+      
+      // Notify parent to refresh data
+      if (onRequestRefresh) {
+        onRequestRefresh();
+      }
+      // Close modal immediately since we've notified parent
       onClose();
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';

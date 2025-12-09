@@ -104,16 +104,21 @@ export class Web3Service {
    */
   async getAllPendingRoleRequests(): Promise<UserRoleStatus[]> {
     try {
+      console.log('Fetching all pending role requests...');
       const result = await this.readOnlyContract.getAllPendingRoleRequests();
+      console.log('Raw pending requests result:', result);
       
       // Map the array result to UserRoleStatus objects
-      return result.map((item: [string, string, bigint, bigint, string]) => ({
+      const mappedResult = result.map((item: [string, string, bigint, bigint, string]) => ({
         role: item[0] as string,
         account: item[1] as string,
         state: Number(item[2]), // Convert BigInt to number
         approvalTimestamp: item[3].toString(), // Convert BigInt timestamp to string
         approvedBy: item[4] as string,
       }));
+      
+      console.log('Mapped pending requests:', mappedResult);
+      return mappedResult;
     } catch (error) {
       console.error('Error getting all pending role requests:', error);
       throw this.handleError(error);
@@ -233,7 +238,8 @@ export class Web3Service {
     try {
       const contract = await this.getContractWithSigner();
       const tx = await contract.grantRole(role, account);
-      await tx.wait();
+      // Wait for transaction with custom polling interval to reduce RPC calls
+      await tx.wait(1, 2000); // 1 confirmation, 2000ms polling interval
       return tx.hash;
     } catch (error) {
       console.error('Error granting role:', error);
@@ -245,7 +251,8 @@ export class Web3Service {
     try {
       const contract = await this.getContractWithSigner();
       const tx = await contract.revokeRole(role, account);
-      await tx.wait();
+      // Wait for transaction with custom polling interval to reduce RPC calls
+      await tx.wait(1, 2000); // 1 confirmation, 2000ms polling interval
       return tx.hash;
     } catch (error) {
       console.error('Error revoking role:', error);
@@ -261,7 +268,8 @@ export class Web3Service {
     try {
       const contract = await this.getContractWithSigner();
       const tx = await contract.registerNetbooks(serialNumbers, batchIds, modelSpecs);
-      await tx.wait();
+      // Wait for transaction with custom polling interval to reduce RPC calls
+      await tx.wait(1, 2000); // 1 confirmation, 2000ms polling interval
       return tx.hash;
     } catch (error) {
       console.error('Error registering netbooks:', error);
@@ -279,7 +287,8 @@ export class Web3Service {
       // Convert string to bytes32 if needed
       const formattedReportHash = reportHash.startsWith('0x') ? reportHash : `0x${reportHash}`;
       const tx = await contract.auditHardware(serialNumber, integrityPassed, formattedReportHash);
-      await tx.wait();
+      // Wait for transaction with custom polling interval to reduce RPC calls
+      await tx.wait(1, 2000); // 1 confirmation, 2000ms polling interval
       return tx.hash;
     } catch (error) {
       console.error('Error auditing hardware:', error);
@@ -295,7 +304,8 @@ export class Web3Service {
     try {
       const contract = await this.getContractWithSigner();
       const tx = await contract.validateSoftware(serialNumber, osVersion, validationPassed);
-      await tx.wait();
+      // Wait for transaction with custom polling interval to reduce RPC calls
+      await tx.wait(1, 2000); // 1 confirmation, 2000ms polling interval
       return tx.hash;
     } catch (error) {
       console.error('Error validating software:', error);
@@ -307,7 +317,8 @@ export class Web3Service {
     try {
       const contract = await this.getContractWithSigner();
       const tx = await contract.requestRoleApproval(role);
-      await tx.wait();
+      // Wait for transaction with custom polling interval to reduce RPC calls
+      await tx.wait(1, 2000); // 1 confirmation, 2000ms polling interval
       return tx.hash;
     } catch (error) {
       console.error('Error requesting role approval:', error);
@@ -317,12 +328,57 @@ export class Web3Service {
 
   async approveRole(role: string, account: string): Promise<string> {
     try {
+      console.log('Approving role in Web3Service:', { role, account });
+      
+      // Validate parameters
+      if (!role || role === '0x0000000000000000000000000000000000000000000000000000000000000000') {
+        throw new Error('Invalid role: Role cannot be empty or default admin role');
+      }
+
+      if (!account || account === '0x0000000000000000000000000000000000000000') {
+        throw new Error('Invalid account: Account cannot be empty or zero address');
+      }
+
       const contract = await this.getContractWithSigner();
+      console.log('Contract address:', await contract.getAddress());
+      console.log('Signer address:', await contract.runner?.getAddress?.());
+      
       const tx = await contract.approveRole(role, account);
-      await tx.wait();
+      console.log('Transaction sent:', tx.hash);
+      
+      // Log transaction details
+      console.log('Transaction details:', {
+        hash: tx.hash,
+        from: tx.from,
+        to: tx.to,
+        data: tx.data,
+        value: tx.value?.toString()
+      });
+      
+      // Wait for transaction with custom polling interval to reduce RPC calls
+      await tx.wait(1, 2000); // 1 confirmation, 2000ms polling interval
+      console.log('Transaction confirmed:', tx.hash);
       return tx.hash;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error approving role:', error);
+      console.error('Error details:', {
+        message: error?.message,
+        code: error?.code,
+        reason: error?.reason,
+        stack: error?.stack,
+        role,
+        account
+      });
+      
+      // Log additional error details if available
+      if (error?.error) {
+        console.error('Nested error:', error.error);
+      }
+      
+      if (error?.data) {
+        console.error('Error data:', error.data);
+      }
+      
       throw this.handleError(error);
     }
   }
@@ -331,7 +387,8 @@ export class Web3Service {
     try {
       const contract = await this.getContractWithSigner();
       const tx = await contract.rejectRole(role, account);
-      await tx.wait();
+      // Wait for transaction with custom polling interval to reduce RPC calls
+      await tx.wait(1, 2000); // 1 confirmation, 2000ms polling interval
       return tx.hash;
     } catch (error) {
       console.error('Error rejecting role:', error);
@@ -343,7 +400,8 @@ export class Web3Service {
     try {
       const contract = await this.getContractWithSigner();
       const tx = await contract.cancelRoleRequest(role);
-      await tx.wait();
+      // Wait for transaction with custom polling interval to reduce RPC calls
+      await tx.wait(1, 2000); // 1 confirmation, 2000ms polling interval
       return tx.hash;
     } catch (error) {
       console.error('Error canceling role request:', error);
@@ -355,7 +413,8 @@ export class Web3Service {
     try {
       const contract = await this.getContractWithSigner();
       const tx = await contract.revokeRoleApproval(role, account);
-      await tx.wait();
+      // Wait for transaction with custom polling interval to reduce RPC calls
+      await tx.wait(1, 2000); // 1 confirmation, 2000ms polling interval
       return tx.hash;
     } catch (error) {
       console.error('Error revoking role approval:', error);
@@ -367,7 +426,8 @@ export class Web3Service {
     try {
       const contract = await this.getContractWithSigner();
       const tx = await contract.renounceRole(role, callerConfirmation);
-      await tx.wait();
+      // Wait for transaction with custom polling interval to reduce RPC calls
+      await tx.wait(1, 2000); // 1 confirmation, 2000ms polling interval
       return tx.hash;
     } catch (error) {
       console.error('Error renouncing role:', error);
@@ -386,7 +446,8 @@ export class Web3Service {
       const formattedSchoolHash = schoolHash.startsWith('0x') ? schoolHash : `0x${schoolHash}`;
       const formattedStudentHash = studentHash.startsWith('0x') ? studentHash : `0x${studentHash}`;
       const tx = await contract.assignToStudent(serialNumber, formattedSchoolHash, formattedStudentHash);
-      await tx.wait();
+      // Wait for transaction with custom polling interval to reduce RPC calls
+      await tx.wait(1, 2000); // 1 confirmation, 2000ms polling interval
       return tx.hash;
     } catch (error) {
       console.error('Error assigning to student:', error);

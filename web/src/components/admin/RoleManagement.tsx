@@ -11,6 +11,14 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
 import { useWeb3 } from '@/lib/contexts/Web3Context';
 import { getRoleConstants } from '@/lib/services/Web3Service';
 import { isValidAddress } from '@/lib/utils';
@@ -225,37 +233,104 @@ export function RoleManagement() {
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-                <div className="flex gap-4">
-                    <div className="flex-1">
-                        <Label htmlFor="search" className="sr-only">Dirección</Label>
-                        <Input
-                            id="search"
-                            placeholder="0x..."
-                            value={searchAddress}
-                            onChange={(e) => setSearchAddress(e.target.value)}
-                        />
-                    </div>
-                    <Button onClick={handleSearch} disabled={loading}>
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                    </Button>
-                </div>
+<div className="space-y-4">
+  <div className="flex gap-4">
+    <div className="flex-1">
+      <Label htmlFor="search" className="sr-only">Dirección</Label>
+      <Input
+        id="search"
+        placeholder="0x..."
+        value={searchAddress}
+        onChange={(e) => setSearchAddress(e.target.value)}
+      />
+    </div>
+    <Button onClick={handleSearch} disabled={loading}>
+      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+    </Button>
+  </div>
+  
+  <div className="flex flex-wrap gap-2">
+    <Select 
+      value={roleFilter} 
+      onValueChange={setRoleFilter}
+    >
+      <SelectTrigger className="w-[180px]">
+        <SelectValue placeholder="Filtrar por rol" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">Todos los roles</SelectItem>
+        {roles.map(role => (
+          <SelectItem key={role.value} value={role.value}>
+            {role.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+    
+    <Select 
+      value={statusFilter} 
+      onValueChange={setStatusFilter}
+    >
+      <SelectTrigger className="w-[180px]">
+        <SelectValue placeholder="Filtrar por estado" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">Todos los estados</SelectItem>
+        <SelectItem value="0">Pendientes</SelectItem>
+        <SelectItem value="1">Aprobados</SelectItem>
+        <SelectItem value="2">Rechazados</SelectItem>
+      </SelectContent>
+    </Select>
+    
+    {selectedRequests.length > 0 && (
+      <div className="flex gap-2 ml-auto">
+        <Button 
+          variant="outline" 
+          size="sm"
+          onClick={handleBulkApprove}
+          disabled={bulkLoading}
+        >
+          {bulkLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
+          Aprobar selección
+        </Button>
+        <Button 
+          variant="outline" 
+          size="sm"
+          onClick={handleBulkReject}
+          disabled={bulkLoading}
+          className="text-red-600 hover:bg-red-50"
+        >
+          <X className="w-4 h-4 mr-2" />
+          Rechazar selección
+        </Button>
+      </div>
+    )}
+  </div>
+</div>
 
-                {userStatuses && (
-                    <div className="space-y-4 border rounded-lg p-4 bg-muted/10">
-                        <h3 className="font-semibold text-sm text-muted-foreground mb-4">Estado de Roles para {searchAddress.slice(0, 6)}...{searchAddress.slice(-4)}</h3>
-                        {userStatuses.map((status) => (
-                            <div key={status.role} className="flex items-center justify-between py-2 border-b last:border-0">
-                                <div className="flex items-center gap-4">
-                                    <span className="font-medium w-32">{status.roleName}</span>
-                                    {getStatusBadge(status)}
-                                </div>
-                                <div>
-                                    {getActions(status)}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
+                 {userStatuses && (
+                     <div className="space-y-4">
+                         <h3 className="font-semibold text-sm text-muted-foreground">Estado de Roles para {searchAddress.slice(0, 6)}...{searchAddress.slice(-4)}</h3>
+                         <Table>
+                             <TableHeader>
+                                 <TableRow>
+                                     <TableHead>Rol</TableHead>
+                                     <TableHead>Estado</TableHead>
+                                     <TableHead className="text-right">Acciones</TableHead>
+                                 </TableRow>
+                             </TableHeader>
+                             <TableBody>
+                                 {userStatuses.map((status) => (
+                                     <TableRow key={status.role}>
+                                         <TableCell className="font-medium">{status.roleName}</TableCell>
+                                         <TableCell>{getStatusBadge(status)}</TableCell>
+                                         <TableCell className="text-right">{getActions(status)}</TableCell>
+                                     </TableRow>
+                                 ))}
+                             </TableBody>
+                         </Table>
+                     </div>
+                 )}
             </CardContent>
         </Card>
     );
