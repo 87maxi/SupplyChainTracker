@@ -204,7 +204,7 @@ export function RoleRequest() {
     if (!isConnected) return null;
 
     return (
-        <div className="space-y-6">
+        <div id="role-request" className="space-y-6">
             <div className="flex flex-col gap-2">
                 <h2 className="text-2xl font-bold tracking-tight">Solicitar Roles</h2>
                 <p className="text-muted-foreground">
