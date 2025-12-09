@@ -24,44 +24,6 @@ interface UserAction {
   scrollToRoleRequest?: boolean;
 }
 
-const [netbookStatuses, setNetbookStatuses] = useState<{state: number, count: number}[]>([]);
-const [isLoadingStats, setIsLoadingStats] = useState(true);
-
-useEffect(() => {
-  const fetchNetbookStats = async () => {
-    if (!web3Service) return;
-    
-    try {
-      // Obtener todos los serial numbers (necesitarías implementar esta función)
-      const serialNumbers = await web3Service.getAllNetbookSerialNumbers();
-      
-      // Contar estados
-      const statusCounts = [0, 0, 0, 0];
-      
-      await Promise.all(serialNumbers.map(async (serial) => {
-        const state = await web3Service.getNetbookState(serial);
-        statusCounts[state]++;
-      }));
-      
-      setNetbookStatuses(statusCounts.map((count, state) => ({
-        state,
-        count,
-        percentage: Math.round((count / serialNumbers.length) * 100)
-      })));
-    } catch (error) {
-      console.error('Error fetching netbook stats:', error);
-    } finally {
-      setIsLoadingStats(false);
-    }
-  };
-  
-  fetchNetbookStats();
-  
-  // Actualizar cada 30 segundos
-  const interval = setInterval(fetchNetbookStats, 30000);
-  return () => clearInterval(interval);
-}, [web3Service]);
-
 const roleActions: Record<string, UserAction[]> = {
   isDefaultAdmin: [
     {
