@@ -13,6 +13,7 @@ import { RoleNotifications } from '@/components/notifications/RoleNotifications'
 import { ContractDebug } from '@/components/debug/ContractDebug';
 import { Crown, Factory, ArrowRight, Users, Activity, Building, AlertTriangle, LucideIcon } from 'lucide-react';
 import Link from 'next/link';
+import { useState, useEffect } from 'react';
 
 interface UserAction {
   title: string;
@@ -23,12 +24,43 @@ interface UserAction {
   scrollToRoleRequest?: boolean;
 }
 
-const mockNetbookStatuses = [
-  { state: 0, count: 24, percentage: 30 },
-  { state: 1, count: 18, percentage: 22.5 },
-  { state: 2, count: 22, percentage: 27.5 },
-  { state: 3, count: 16, percentage: 20 }
-];
+const [netbookStatuses, setNetbookStatuses] = useState<{state: number, count: number}[]>([]);
+const [isLoadingStats, setIsLoadingStats] = useState(true);
+
+useEffect(() => {
+  const fetchNetbookStats = async () => {
+    if (!web3Service) return;
+    
+    try {
+      // Obtener todos los serial numbers (necesitarías implementar esta función)
+      const serialNumbers = await web3Service.getAllNetbookSerialNumbers();
+      
+      // Contar estados
+      const statusCounts = [0, 0, 0, 0];
+      
+      await Promise.all(serialNumbers.map(async (serial) => {
+        const state = await web3Service.getNetbookState(serial);
+        statusCounts[state]++;
+      }));
+      
+      setNetbookStatuses(statusCounts.map((count, state) => ({
+        state,
+        count,
+        percentage: Math.round((count / serialNumbers.length) * 100)
+      })));
+    } catch (error) {
+      console.error('Error fetching netbook stats:', error);
+    } finally {
+      setIsLoadingStats(false);
+    }
+  };
+  
+  fetchNetbookStats();
+  
+  // Actualizar cada 30 segundos
+  const interval = setInterval(fetchNetbookStats, 30000);
+  return () => clearInterval(interval);
+}, [web3Service]);
 
 const roleActions: Record<string, UserAction[]> = {
   isDefaultAdmin: [
@@ -69,7 +101,60 @@ const roleActions: Record<string, UserAction[]> = {
 };
 
 export function EnhancedDashboard() {
-  const { isConnected, isAdmin, isDefaultAdmin, hasAnyRole, isLoading, address } = useWeb3();
+  const { isConnected, isAdmin, isDefaultAdmin, hasAnyRole, isLoading, address, web3Service } = useWeb3();
+  const [netbookStatuses, setNetbookStatuses] = useState<Array<{ state: number; count: number; percentage: number }>>([]);
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
+
+  // Use effect to fetch netbook statistics when component mounts or web3Service changes
+  useEffect(() => {
+    const fetchNetbookStats = async () => {
+      if (!web3Service) return;
+      
+      setIsLoadingStats(true);
+      try {
+        // This function is not implemented, we'll handle it as a placeholder
+        // const serialNumbers = await web3Service.getAllNetbookSerialNumbers();
+        
+        // For now, we'll simulate data as a fallback
+        console.warn('getAllNetbookSerialNumbers not implemented, using simulation');
+        const mockSerialNumbers = ['SER001', 'SER002', 'SER003', 'SER004']; // Simulated
+        
+        // Count states
+        const statusCounts = [0, 0, 0, 0];
+        
+        // Simulate the state check for each serial number
+        for (let i = 0; i < mockSerialNumbers.length; i++) {
+          // Simulate random state for demo, but we'll set a known pattern
+          // state 0: Fabricada, 1: HW_APROBADO, 2: SW_VALIDADO, 3: DISTRIBUIDA
+          // For this demo, we'll say: 1 fabricada, 1 hw aprobado, 2 software validado / distribuida
+          let state = 0;
+          if (i === 1) state = 1;
+          if (i >= 2) state = 3;
+          
+          statusCounts[state]++;
+        }
+        
+        setNetbookStatuses(statusCounts.map((count, state) => ({
+          state,
+          count,
+          percentage: Math.round((count / mockSerialNumbers.length) * 100)
+        })));      
+      } catch (error) {
+        console.error('Error fetching netbook stats:', error);
+      } finally {
+        setIsLoadingStats(false);
+      }
+    };
+    
+    // Only fetch if web3Service is available
+    if (web3Service) {
+      fetchNetbookStats();
+    }
+    
+    // Update every 30 seconds
+    const interval = setInterval(fetchNetbookStats, 30000);
+    return () => clearInterval(interval);
+  }, [web3Service]);
 
   if (!isConnected) {
     return (
@@ -263,12 +348,13 @@ export function EnhancedDashboard() {
 
       {/* Stats Grid - Only show for admins */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatsCard
-          title="Netbooks Totales"
-          value="80"
-          description="Desde el inicio del programa"
-          icon={<Factory className="w-5 h-5" />}
-        />
+<StatsCard
+  title="Netbooks Totales"
+  value={netbookStatuses.reduce((sum, {count}) => sum + count, 0).toString()}
+  description="Desde el inicio del programa"
+  icon={<Factory className="w-5 h-5" />}
+  loading={isLoadingStats}
+/>
         <StatsCard
           title="Usuarios Registrados"
           value="15"
@@ -291,7 +377,10 @@ export function EnhancedDashboard() {
 
       {/* Charts and Activity */}
       <div className="grid gap-8 md:grid-cols-2">
-        <NetbookStatusChart statuses={mockNetbookStatuses} />
+        <NetbookStatusChart 
+  statuses={netbookStatuses} 
+  loading={isLoadingStats}
+/>
 
         <div className="space-y-8">
           <RoleRequest />
