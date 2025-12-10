@@ -4,21 +4,22 @@ import { AlertTriangle, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useWeb3 } from '@/lib/contexts/Web3Context';
+import { getRoleConstants } from '@/lib/services/Web3Service';
+import { ReactNode } from 'react';
 
 interface PermissionGuardProps {
-  children: React.ReactNode;
-  requiredRole?: 'admin' | 'defaultAdmin' | 'manufacturer' | 'auditor' | 'technician' | 'school';
-  fallback?: React.ReactNode;
+  children: ReactNode;
+  requiredRoles?: string[]; // Array of role hashes
+  fallback?: ReactNode;
 }
 
 export function PermissionGuard({
   children,
-  requiredRole = 'admin',
+  requiredRoles = [],
   fallback
 }: PermissionGuardProps) {
   const {
     isConnected,
-    isAdmin,
     isDefaultAdmin,
     isManufacturer,
     isAuditor,
@@ -60,29 +61,27 @@ export function PermissionGuard({
     );
   }
 
-  let hasPermission = false;
-
-  switch (requiredRole) {
-    case 'defaultAdmin':
-      hasPermission = isDefaultAdmin;
-      break;
-    case 'manufacturer':
-      hasPermission = isManufacturer;
-      break;
-    case 'auditor':
-      hasPermission = isAuditor;
-      break;
-    case 'technician':
-      hasPermission = isTechnician;
-      break;
-    case 'school':
-      hasPermission = isSchool;
-      break;
-    case 'admin':
-    default:
-      hasPermission = isAdmin;
-      break;
+  // Default admin has access to everything
+  if (isDefaultAdmin) {
+    return <>{children}</>;
   }
+
+  // Check if the user has any of the required roles
+  const hasPermission = requiredRoles.length === 0 || requiredRoles.some(role => {
+    const roleConstants = getRoleConstants();
+    switch (role) {
+      case roleConstants.FABRICANTE_ROLE:
+        return isManufacturer;
+      case roleConstants.AUDITOR_HW_ROLE:
+        return isAuditor;
+      case roleConstants.TECNICO_SW_ROLE:
+        return isTechnician;
+      case roleConstants.ESCUELA_ROLE:
+        return isSchool;
+      default:
+        return false;
+    }
+  });
 
   if (!hasPermission) {
     if (fallback) {
@@ -90,15 +89,17 @@ export function PermissionGuard({
     }
 
     const getRoleName = (role: string) => {
+      const roleConstants = getRoleConstants();
       switch (role) {
-        case 'defaultAdmin': return 'Administrador Principal';
-        case 'manufacturer': return 'Fabricante';
-        case 'auditor': return 'Auditor de Hardware';
-        case 'technician': return 'Técnico de Software';
-        case 'school': return 'Escuela';
-        default: return 'Administrador';
+        case roleConstants.FABRICANTE_ROLE: return 'Fabricante';
+        case roleConstants.AUDITOR_HW_ROLE: return 'Auditor de Hardware';
+        case roleConstants.TECNICO_SW_ROLE: return 'Técnico de Software';
+        case roleConstants.ESCUELA_ROLE: return 'Escuela';
+        default: return 'Rol Desconocido';
       }
     };
+
+    const requiredRoleNames = requiredRoles.map(getRoleName).join(', ');
 
     return (
       <Card className="w-full border-red-200 bg-red-50/50">
@@ -108,7 +109,7 @@ export function PermissionGuard({
             Acceso Denegado
           </CardTitle>
           <CardDescription className="text-red-700">
-            Necesitas el rol de <strong>{getRoleName(requiredRole)}</strong> para acceder a esta sección.
+            Necesitas uno de los siguientes roles para acceder a esta sección: <strong>{requiredRoleNames}</strong>.
           </CardDescription>
         </CardHeader>
         <CardContent>

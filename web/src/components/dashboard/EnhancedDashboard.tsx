@@ -288,7 +288,12 @@ export function EnhancedDashboard() {
                   className="w-full mt-4"
                   onClick={() => {
                     const element = document.getElementById('role-request');
-                    element?.scrollIntoView({ behavior: 'smooth' });
+                    if (element) {
+                      element.scrollIntoView({ behavior: 'smooth' });
+                    } else {
+                      // If element not found, navigate to dashboard page with hash
+                      window.location.href = `/dashboard#role-request`;
+                    }
                   }}
                 >
                   Ver Solicitudes de Rol

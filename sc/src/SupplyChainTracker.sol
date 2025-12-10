@@ -78,11 +78,47 @@ contract SupplyChainTracker is AccessControl {
     // Mapping to find index in pendingRequests array: role => account => index
     mapping(bytes32 => mapping(address => uint256)) public pendingRequestIndex;
     
-    // Eventos
+    /**
+     * @dev Emitted when a netbook is registered by the manufacturer.
+     * @param serialNumber The serial number of the netbook.
+     * @param batchId The batch ID of the netbook.
+     * @param initialModelSpecs The initial model specifications.
+     */
     event NetbookRegistered(string serialNumber, string batchId, string initialModelSpecs);
+
+    /**
+     * @dev Emitted when the hardware of a netbook is audited.
+     * @param serialNumber The serial number of the netbook.
+     * @param auditor The address of the auditor.
+     * @param passed Whether the hardware audit passed.
+     * @param reportHash The hash of the audit report.
+     */
     event HardwareAudited(string serialNumber, address auditor, bool passed, bytes32 reportHash);
+
+    /**
+     * @dev Emitted when the software of a netbook is validated.
+     * @param serialNumber The serial number of the netbook.
+     * @param technician The address of the technician.
+     * @param osVersion The OS version installed.
+     * @param passed Whether the software validation passed.
+     */
     event SoftwareValidated(string serialNumber, address technician, string osVersion, bool passed);
+
+    /**
+     * @dev Emitted when a netbook is assigned to a student.
+     * @param serialNumber The serial number of the netbook.
+     * @param schoolHash The hash of the school.
+     * @param studentHash The hash of the student ID.
+     */
     event AssignedToStudent(string serialNumber, bytes32 schoolHash, bytes32 studentHash);
+
+    /**
+     * @dev Emitted when the status of a role request is updated.
+     * @param role The role hash.
+     * @param account The account address.
+     * @param state The new approval state.
+     * @param updatedBy The address that updated the status.
+     */
     event RoleStatusUpdated(bytes32 indexed role, address indexed account, ApprovalState state, address updatedBy);
     
     // Modificador para verificar el estado previo de netbook
@@ -262,6 +298,13 @@ contract SupplyChainTracker is AccessControl {
         emit HardwareAudited(serialNumber, msg.sender, integrityPassed, reportHash);
     }
     
+    /**
+     * @dev Validates the software of a netbook.
+     * @notice Requires the caller to have the TECNICO_SW_ROLE and the netbook to be in HW_APROBADO state.
+     * @param serialNumber The serial number of the netbook.
+     * @param osVersion The OS version installed.
+     * @param validationPassed Whether the software validation passed.
+     */
     function validateSoftware(
         string calldata serialNumber,
         string calldata osVersion,

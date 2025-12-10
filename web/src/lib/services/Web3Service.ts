@@ -3,7 +3,7 @@
 import { ethers, Signer } from 'ethers';
 import SupplyChainTrackerABI from '../../contracts/SupplyChainTrackerABI.json';
 import { getNetbookStateInfo } from '../utils';
-import { ContractError, UserRoleStatus, NetbookReport } from '../types';
+import { ContractError, UserRoleStatus, NetbookReport, LifecycleStep } from '../types';
 
 // Contract configuration
 const CONTRACT_ADDRESS: string = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || '';
@@ -16,6 +16,7 @@ const RPC_URL: string = process.env.NEXT_PUBLIC_RPC_URL || 'http://localhost:854
 export class Web3Service {
   public readOnlyContract: ethers.Contract;
   private signer: Signer | null;
+  private eventListeners: Map<string, (event: any) => void> = new Map();
 
   /**
    * @param signer The connected wallet signer for transactions. Null for read-only.
@@ -126,11 +127,11 @@ export class Web3Service {
   }
 
   /**
-   * @description Gets the full report for a netbook by serial number.
+   * @description Fetches the full report for a netbook by serial number.
    * @param serialNumber The netbook's serial number.
    * @returns The netbook report object.
    */
-  async getNetbookReport(serialNumber: string): Promise<NetbookReport> {
+  async fetchNetbookReport(serialNumber: string): Promise<NetbookReport> {
     try {
       const result = await this.readOnlyContract.getNetbookReport(serialNumber);
       
@@ -148,27 +149,41 @@ export class Web3Service {
         destinationSchoolHash: result[9] as string,
         studentIdHash: result[10] as string,
         distributionTimestamp: result[11].toString(), // BigInt to string
-        state: Number(result[12]), // BigInt to number
+        state: this.mapStateToLifecycleStep(result[12]), // BigInt to LifecycleStep
       };
     } catch (error) {
-      console.error('Error getting netbook report:', error);
+      console.error('Error fetching netbook report:', error);
       throw this.handleError(error);
     }
   }
 
   /**
-   * @description Gets the current state ID of a netbook.
+   * @description Fetches the current lifecycle step of a netbook.
    * @param serialNumber The netbook's serial number.
-   * @returns The state ID (number).
+   * @returns The lifecycle step (LifecycleStep enum).
    */
-  async getNetbookState(serialNumber: string): Promise<number> {
+  async fetchNetbookLifecycleStep(serialNumber: string): Promise<LifecycleStep> {
     try {
       const stateBigInt = await this.readOnlyContract.getNetbookState(serialNumber);
-      return Number(stateBigInt);
+      return this.mapStateToLifecycleStep(stateBigInt);
     } catch (error) {
-      console.error('Error getting netbook state:', error);
+      console.error('Error fetching netbook lifecycle step:', error);
       throw this.handleError(error);
     }
+  }
+
+  /**
+   * @description Maps a state value from the contract to LifecycleStep.
+   * @param state The state value as BigInt or number.
+   * @returns The mapped LifecycleStep.
+   * @throws Error if the state is invalid.
+   */
+  private mapStateToLifecycleStep(state: bigint | number): LifecycleStep {
+    const stateNumber = Number(state);
+    if (!Object.values(LifecycleStep).includes(stateNumber as LifecycleStep)) {
+      throw new Error(`Invalid netbook state: ${stateNumber}`);
+    }
+    return stateNumber as LifecycleStep;
   }
 
   async getRoleAdmin(role: string): Promise<string> {
@@ -267,6 +282,10 @@ export class Web3Service {
   ): Promise<string> {
     try {
       const contract = await this.getContractWithSigner();
+      const address = await this.signer?.getAddress();
+      if (!address) throw new Error('Signer address not available.');
+      
+      await this.validateRole(getRoleConstants().FABRICANTE_ROLE, address);
       const tx = await contract.registerNetbooks(serialNumbers, batchIds, modelSpecs);
       // Wait for transaction with custom polling interval to reduce RPC calls
       await tx.wait(1, 2000); // 1 confirmation, 2000ms polling interval
@@ -284,6 +303,10 @@ export class Web3Service {
   ): Promise<string> {
     try {
       const contract = await this.getContractWithSigner();
+      const address = await this.signer?.getAddress();
+      if (!address) throw new Error('Signer address not available.');
+      
+      await this.validateRole(getRoleConstants().AUDITOR_HW_ROLE, address);
       // Convert string to bytes32 if needed
       const formattedReportHash = reportHash.startsWith('0x') ? reportHash : `0x${reportHash}`;
       const tx = await contract.auditHardware(serialNumber, integrityPassed, formattedReportHash);
@@ -303,6 +326,10 @@ export class Web3Service {
   ): Promise<string> {
     try {
       const contract = await this.getContractWithSigner();
+      const address = await this.signer?.getAddress();
+      if (!address) throw new Error('Signer address not available.');
+      
+      await this.validateRole(getRoleConstants().TECNICO_SW_ROLE, address);
       const tx = await contract.validateSoftware(serialNumber, osVersion, validationPassed);
       // Wait for transaction with custom polling interval to reduce RPC calls
       await tx.wait(1, 2000); // 1 confirmation, 2000ms polling interval
@@ -442,6 +469,10 @@ export class Web3Service {
   ): Promise<string> {
     try {
       const contract = await this.getContractWithSigner();
+      const address = await this.signer?.getAddress();
+      if (!address) throw new Error('Signer address not available.');
+      
+      await this.validateRole(getRoleConstants().ESCUELA_ROLE, address);
       // Convert strings to bytes32 if needed
       const formattedSchoolHash = schoolHash.startsWith('0x') ? schoolHash : `0x${schoolHash}`;
       const formattedStudentHash = studentHash.startsWith('0x') ? studentHash : `0x${studentHash}`;
@@ -480,6 +511,42 @@ export class Web3Service {
     return {
       message: 'Unknown error occurred'
     };
+  }
+
+  /**
+   * @description Sets up event listeners for contract events.
+   * @param eventName The name of the event to listen for.
+   * @param callback The callback function to execute when the event is emitted.
+   */
+  public setupEventListener(eventName: string, callback: (event: any) => void): void {
+    if (this.eventListeners.has(eventName)) {
+      this.readOnlyContract.off(eventName, this.eventListeners.get(eventName));
+    }
+    this.eventListeners.set(eventName, callback);
+    this.readOnlyContract.on(eventName, callback);
+  }
+
+  /**
+   * @description Removes all event listeners.
+   */
+  public removeAllEventListeners(): void {
+    this.eventListeners.forEach((callback, eventName) => {
+      this.readOnlyContract.off(eventName, callback);
+    });
+    this.eventListeners.clear();
+  }
+
+  /**
+   * @description Validates if the user has the required role before executing a transaction.
+   * @param role The role hash to validate.
+   * @param account The account address to check.
+   * @throws Error if the user does not have the required role.
+   */
+  private async validateRole(role: string, account: string): Promise<void> {
+    const hasRole = await this.hasRole(role, account);
+    if (!hasRole) {
+      throw new Error('User does not have the required role to perform this action.');
+    }
   }
 }
 

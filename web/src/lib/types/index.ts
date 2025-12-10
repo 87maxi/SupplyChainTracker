@@ -16,6 +16,32 @@ export interface UserRoleStatus {
   approvedBy: string;
 }
 
+/**
+ * Representa los pasos del ciclo de vida de una netbook.
+ */
+export enum LifecycleStep {
+  Registered = 0,
+  HardwareAudited = 1,
+  SoftwareValidated = 2,
+  Delivered = 3,
+}
+
+/**
+ * Mapea los IDs de estado del contrato a nombres legibles.
+ */
+export const LifecycleStepLabels: Record<LifecycleStep, string> = {
+  [LifecycleStep.Registered]: "Registered",
+  [LifecycleStep.HardwareAudited]: "Hardware Audited",
+  [LifecycleStep.SoftwareValidated]: "Software Validated",
+  [LifecycleStep.Delivered]: "Delivered",
+};
+
+/**
+ * Datos de una netbook registrada.
+ */
+/**
+ * @deprecated Use NetbookReport instead. This interface is kept for backward compatibility.
+ */
 export interface Netbook {
   serialNumber: string;
   batchId: string;
@@ -29,14 +55,23 @@ export interface Netbook {
   destinationSchoolHash: string;
   studentIdHash: string;
   distributionTimestamp: string;
-  state: number;
+  state: LifecycleStep;
 }
 
-export interface NetbookState {
-  id: number;
-  name: string;
+/**
+ * Detalles adicionales para un paso del ciclo de vida.
+ */
+export interface LifecycleStepDetails {
   label: string;
   description: string;
+  auditor?: string;
+  auditResult?: string;
+  technician?: string;
+  osVersion?: string;
+  validationResult?: string;
+  school?: string;
+  studentId?: string;
+  timestamp?: string;
 }
 
 export interface TransactionHash {
