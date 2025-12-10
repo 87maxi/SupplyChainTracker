@@ -1,344 +1,215 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+/// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.20;
 
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {ERC721, ERC721Enumerable} from "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {IERC721SupplyChain} from "./interfaces/IERC721SupplyChain.sol";
 
-/**
- * @title SupplyChainTracker
- * @dev Sistema de trazabilidad para netbooks con control de acceso basado en roles y máquina de estados.
- */
-contract SupplyChainTracker is AccessControl {
-    // Definición de roles
+/// @title SupplyChainTracker - Sistema de Rastreo de Netbooks mediante NFTs
+/// @author Continue
+/// @notice Sistema completo de trazabilidad para netbooks del Plan de Inclusión Digital
+/// Cada netbook es representada como un NFT (nToken) con seguimiento del ciclo de vida
+contract SupplyChainTracker is ERC721Enumerable, Ownable2Step, IERC721SupplyChain {
+    /// 
+    /// Estados del Ciclo de Vida
+    ///
+    enum State {
+        FABRICADA,      // Netbook registrada por fabricante
+        HW_APROBADO,    // Auditoría de hardware completada
+        SW_VALIDADO,    // Validación de software completada
+        DISTRIBUIDA     // Asignada a un estudiante
+    }
+    
+    ///
+    /// Roles de Participantes
+    ///
     bytes32 public constant FABRICANTE_ROLE = keccak256("FABRICANTE_ROLE");
     bytes32 public constant AUDITOR_HW_ROLE = keccak256("AUDITOR_HW_ROLE");
     bytes32 public constant TECNICO_SW_ROLE = keccak256("TECNICO_SW_ROLE");
     bytes32 public constant ESCUELA_ROLE = keccak256("ESCUELA_ROLE");
-
-    // Estados de aprobación para roles
+    
+    ///
+    /// Estado de Aprobación de Rol
+    ///
     enum ApprovalState {
-        Pending,
-        Approved,
-        Rejected,
-        Canceled
+        PENDING,    // Solicitud pendiente
+        APPROVED,   // Aprobado
+        REJECTED,   // Rechazado
+        CANCELLED   // Cancelado por solicitante
     }
-
-    // Definición de estados de netbook
-    enum NetbookState {
-        FABRICADA,
-        HW_APROBADO,
-        SW_VALIDADO,
-        DISTRIBUIDA
-    }
-
-    // Estructura para gestión de estados de rol por dirección
+    
+    ///
+    /// Estructura de Datos
+    /// 
     struct RoleApproval {
-        bytes32 role;
-        address account;
         ApprovalState state;
-        uint256 approvalTimestamp;
+        address account;
+        bytes32 role;
         address approvedBy;
+        uint256 approvalTimestamp;
     }
-
-    // Estructura de datos para la netbook
+    
     struct Netbook {
         string serialNumber;
         string batchId;
-        string initialModelSpecs;
-
+        string specs;
+        uint8 state;
+        
+        // Auditoría de Hardware
         address hwAuditor;
-        bool hwIntegrityPassed;
         bytes32 hwReportHash;
-
+        bool hwIntegrityPassed;
+        
+        // Validación de Software
         address swTechnician;
         string osVersion;
         bool swValidationPassed;
-
+        
+        // Distribución
         bytes32 destinationSchoolHash;
         bytes32 studentIdHash;
         uint256 distributionTimestamp;
-
-        NetbookState state;
     }
     
-    // Mapping de serialNumber a Netbook
-    mapping(string => Netbook) private netbooks;
+    ///
+    /// Mapping de Datos
+    ///
+    // Mapeo de token ID a datos de netbook
+    mapping(uint256 => Netbook) private _netbooks;
     
-    // Mapping para estados de aprobación de roles: role => account => RoleApproval
-    mapping(bytes32 => mapping(address => RoleApproval)) public roleApprovals;
+    // Mapeo de direcciones a sus roles aprobados
+    mapping(address => mapping(bytes32 => RoleApproval)) private _roleApprovals;
     
-    // Struct to track pending requests for efficient enumeration
-    struct PendingRequest {
-        bytes32 role;
+    // Mapeo de número de serie a token ID
+    mapping(string => uint256) private _serialToToken;
+    
+    // Contador de tokens para generar IDs únicos
+    uint256 private _tokenIdCounter;
+    
+    // Storage para iteración sobre RoleApprovals
+    // 
+    // Para permitir la iteración en getAllPendingRoleRequests, necesitamos
+    // un mecanismo para rastrear todas las entradas en _roleApprovals.
+    // 
+    // Estrategia: Usar un array para almacenar las combinaciones de (account, role)
+    // que han sido solicitadas, y luego iterar sobre este array para obtener
+    // las solicitudes pendientes.
+    //
+    struct RoleApprovalKey {
         address account;
+        bytes32 role;
     }
     
-    // Array to track all pending role requests
-    PendingRequest[] public pendingRequests;
+    RoleApprovalKey[] private _roleApprovalKeys;
+    mapping(address => mapping(bytes32 => uint256)) private _roleApprovalIndices;
     
-    // Mapping to find index in pendingRequests array: role => account => index
-    mapping(bytes32 => mapping(address => uint256)) public pendingRequestIndex;
+    ///
+    /// Eventos
+    ///
+    event RoleRequested(address indexed account, bytes32 indexed role);
+    event RoleApproved(address indexed account, bytes32 indexed role, address indexed approvedBy);
+    event RoleRejected(address indexed account, bytes32 indexed role, address indexed approvedBy);
+    event RoleCancelled(address indexed account, bytes32 indexed role);
+    event RoleRevoked(address indexed account, bytes32 indexed role, address indexed revokedBy);
     
-    /**
-     * @dev Emitted when a netbook is registered by the manufacturer.
-     * @param serialNumber The serial number of the netbook.
-     * @param batchId The batch ID of the netbook.
-     * @param initialModelSpecs The initial model specifications.
-     */
-    event NetbookRegistered(string serialNumber, string batchId, string initialModelSpecs);
-
-    /**
-     * @dev Emitted when the hardware of a netbook is audited.
-     * @param serialNumber The serial number of the netbook.
-     * @param auditor The address of the auditor.
-     * @param passed Whether the hardware audit passed.
-     * @param reportHash The hash of the audit report.
-     */
-    event HardwareAudited(string serialNumber, address auditor, bool passed, bytes32 reportHash);
-
-    /**
-     * @dev Emitted when the software of a netbook is validated.
-     * @param serialNumber The serial number of the netbook.
-     * @param technician The address of the technician.
-     * @param osVersion The OS version installed.
-     * @param passed Whether the software validation passed.
-     */
-    event SoftwareValidated(string serialNumber, address technician, string osVersion, bool passed);
-
-    /**
-     * @dev Emitted when a netbook is assigned to a student.
-     * @param serialNumber The serial number of the netbook.
-     * @param schoolHash The hash of the school.
-     * @param studentHash The hash of the student ID.
-     */
-    event AssignedToStudent(string serialNumber, bytes32 schoolHash, bytes32 studentHash);
-
-    /**
-     * @dev Emitted when the status of a role request is updated.
-     * @param role The role hash.
-     * @param account The account address.
-     * @param state The new approval state.
-     * @param updatedBy The address that updated the status.
-     */
-    event RoleStatusUpdated(bytes32 indexed role, address indexed account, ApprovalState state, address updatedBy);
+    event NetbookMinted(
+        uint256 indexed tokenId,
+        string serialNumber,
+        string batchId,
+        string specs
+    );
     
-    // Modificador para verificar el estado previo de netbook
-    modifier netbookStateIs(string memory serial, NetbookState expectedState) {
-        _checkNetbookState(serial, expectedState);
-        _;
-    }
-
-    function _checkNetbookState(string memory serial, NetbookState expectedState) internal view {
-        require(netbooks[serial].state == expectedState, unicode"Estado incorrecto para esta operación");
-    }
-
-    modifier onlyApprovedRole(bytes32 role) {
-        _checkApprovedRole(role);
-        _;
-    }
-
-    function _checkApprovedRole(bytes32 role) internal view {
-        require(roleApprovals[role][msg.sender].state == ApprovalState.Approved, 
-                unicode"Rol no aprobado para esta dirección");
-    }
+    event HardwareAudited(
+        uint256 indexed tokenId,
+        address indexed auditor,
+        bytes32 reportHash,
+        bool passed
+    );
     
-    constructor() {
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-    }
+    event SoftwareValidated(
+        uint256 indexed tokenId,
+        address indexed technician,
+        string osVersion,
+        bool passed
+    );
     
-    // Funciones administrativas para gestión de roles
-    function requestRoleApproval(bytes32 role) external {
-        require(role != DEFAULT_ADMIN_ROLE, "Cannot request admin role");
-
-        // Allow requesting if never requested before (account == address(0)) or if canceled
-        if (roleApprovals[role][msg.sender].account != address(0)) {
-            require(roleApprovals[role][msg.sender].state == ApprovalState.Pending ||
-                    roleApprovals[role][msg.sender].state == ApprovalState.Canceled,
-                    "Role request already exists or is approved");
-        }
-
-        roleApprovals[role][msg.sender] = RoleApproval({
-            role: role,
-            account: msg.sender,
-            state: ApprovalState.Pending,
-            approvalTimestamp: block.timestamp,
-            approvedBy: address(0)
-        });
-
-        _addPendingRequest(role, msg.sender);
-        emit RoleStatusUpdated(role, msg.sender, ApprovalState.Pending, msg.sender);
-    }
-    
-    function approveRole(bytes32 role, address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(roleApprovals[role][account].state == ApprovalState.Pending, 
-                "Role not in pending state");
-        
-        roleApprovals[role][account].state = ApprovalState.Approved;
-        roleApprovals[role][account].approvalTimestamp = block.timestamp;
-        roleApprovals[role][account].approvedBy = msg.sender;
-        
-        _grantRole(role, account);
-        _removePendingRequest(role, account);
-        emit RoleStatusUpdated(role, account, ApprovalState.Approved, msg.sender);
-    }
-    
-    function rejectRole(bytes32 role, address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(roleApprovals[role][account].state == ApprovalState.Pending, 
-                "Role not in pending state");
-        
-        roleApprovals[role][account].state = ApprovalState.Rejected;
-        roleApprovals[role][account].approvalTimestamp = block.timestamp;
-        roleApprovals[role][account].approvedBy = msg.sender;
-        
-        emit RoleStatusUpdated(role, account, ApprovalState.Rejected, msg.sender);
-        _removePendingRequest(role, account);
-    }
-    
-    function cancelRoleRequest(bytes32 role) external {
-        require(roleApprovals[role][msg.sender].state == ApprovalState.Pending, 
-                "No pending request to cancel");
-        
-        roleApprovals[role][msg.sender].state = ApprovalState.Canceled;
-        roleApprovals[role][msg.sender].approvalTimestamp = block.timestamp;
-        
-        emit RoleStatusUpdated(role, msg.sender, ApprovalState.Canceled, msg.sender);
-        _removePendingRequest(role, msg.sender);
-    }
-    
-    function revokeRoleApproval(bytes32 role, address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(roleApprovals[role][account].state == ApprovalState.Approved, 
-                "Role not approved");
-        
-        roleApprovals[role][account].state = ApprovalState.Canceled;
-        roleApprovals[role][account].approvalTimestamp = block.timestamp;
-        roleApprovals[role][account].approvedBy = msg.sender;
-        
-        _revokeRole(role, account);
-        emit RoleStatusUpdated(role, account, ApprovalState.Canceled, msg.sender);
-    }
-    
-    function getRoleStatus(bytes32 role, address account) external view returns (RoleApproval memory) {
-        return roleApprovals[role][account];
-    }
-    
-    function getAllPendingRoleRequests() external view returns (RoleApproval[] memory) {
-        RoleApproval[] memory result = new RoleApproval[](pendingRequests.length);
-        for (uint256 i = 0; i < pendingRequests.length; i++) {
-            PendingRequest memory req = pendingRequests[i];
-            result[i] = roleApprovals[req.role][req.account];
-        }
-        return result;
-    }
-    
-    // Helper functions to manage pending requests array
-    function _addPendingRequest(bytes32 role, address account) internal {
-        // Check if already exists
-        if (pendingRequestIndex[role][account] != 0) {
-            return; // Already in pending state
-        }
-        pendingRequests.push(PendingRequest({role: role, account: account}));
-        pendingRequestIndex[role][account] = pendingRequests.length; // 1-based index
-    }
-    
-    function _removePendingRequest(bytes32 role, address account) internal {
-        uint256 index = pendingRequestIndex[role][account];
-        if (index == 0 || index > pendingRequests.length) return;
-        
-        // Simple removal: swap with last and pop
-        uint256 lastIndex = pendingRequests.length - 1;
-        if (index - 1 != lastIndex) {
-            PendingRequest memory lastRequest = pendingRequests[lastIndex];
-            pendingRequests[index - 1] = lastRequest;
-            pendingRequestIndex[lastRequest.role][lastRequest.account] = index;
-        }
-        pendingRequests.pop();
-        pendingRequestIndex[role][account] = 0;
-    }
-    function registerNetbooks(
-        string[] calldata serialNumbers,
-        string[] calldata batchIds,
-        string[] calldata modelSpecs
-    ) external onlyApprovedRole(FABRICANTE_ROLE) {
-        require(serialNumbers.length == batchIds.length && batchIds.length == modelSpecs.length, "Arrays de longitud incompatible");
-        
-        for (uint256 i = 0; i < serialNumbers.length; i++) {
-            string memory serial = serialNumbers[i];
-            require(bytes(netbooks[serial].serialNumber).length == 0, "Netbook ya registrada");
-            
-            netbooks[serial] = Netbook({
-                serialNumber: serial,
-                batchId: batchIds[i],
-                initialModelSpecs: modelSpecs[i],
-                hwAuditor: address(0),
-                hwIntegrityPassed: false,
-                hwReportHash: bytes32(0),
-                swTechnician: address(0),
-                osVersion: "",
-                swValidationPassed: false,
-                destinationSchoolHash: bytes32(0),
-                studentIdHash: bytes32(0),
-                distributionTimestamp: 0,
-                state: NetbookState.FABRICADA
-            });
-            
-            emit NetbookRegistered(serial, batchIds[i], modelSpecs[i]);
-        }
-    }
-    
-    function auditHardware(
-        string calldata serialNumber,
-        bool integrityPassed,
-        bytes32 reportHash
-    ) external onlyApprovedRole(AUDITOR_HW_ROLE) netbookStateIs(serialNumber, NetbookState.FABRICADA) {
-        Netbook storage netbook = netbooks[serialNumber];
-        netbook.hwAuditor = msg.sender;
-        netbook.hwIntegrityPassed = integrityPassed;
-        netbook.hwReportHash = reportHash;
-        netbook.state = NetbookState.HW_APROBADO;
-        
-        emit HardwareAudited(serialNumber, msg.sender, integrityPassed, reportHash);
-    }
-    
-    /**
-     * @dev Validates the software of a netbook.
-     * @notice Requires the caller to have the TECNICO_SW_ROLE and the netbook to be in HW_APROBADO state.
-     * @param serialNumber The serial number of the netbook.
-     * @param osVersion The OS version installed.
-     * @param validationPassed Whether the software validation passed.
-     */
-    function validateSoftware(
-        string calldata serialNumber,
-        string calldata osVersion,
-        bool validationPassed
-    ) external onlyApprovedRole(TECNICO_SW_ROLE) netbookStateIs(serialNumber, NetbookState.HW_APROBADO) {
-        Netbook storage netbook = netbooks[serialNumber];
-        netbook.swTechnician = msg.sender;
-        netbook.osVersion = osVersion;
-        netbook.swValidationPassed = validationPassed;
-        netbook.state = NetbookState.SW_VALIDADO;
-        
-        emit SoftwareValidated(serialNumber, msg.sender, osVersion, validationPassed);
-    }
-    
-    function assignToStudent(
-        string calldata serialNumber,
+    event NetbookAssigned(
+        uint256 indexed tokenId,
         bytes32 schoolHash,
-        bytes32 studentHash
-    ) external onlyApprovedRole(ESCUELA_ROLE) netbookStateIs(serialNumber, NetbookState.SW_VALIDADO) {
-        Netbook storage netbook = netbooks[serialNumber];
-        netbook.destinationSchoolHash = schoolHash;
-        netbook.studentIdHash = studentHash;
-        netbook.distributionTimestamp = block.timestamp;
-        netbook.state = NetbookState.DISTRIBUIDA;
+        bytes32 studentIdHash,
+        uint256 timestamp
+    );
+    
+    ///
+    /// Modificadores
+    ///
+    modifier onlyApprovedRole(bytes32 role) {
+        require(_hasApprovedRole(role), "Rol no aprobado para esta dirección");
+        _;
+    }
+    
+    modifier onlyState(uint256 tokenId, State expectedState) {
+        require(_netbooks[tokenId].state == uint8(expectedState), "Estado incorrecto para esta operación");
+        _;
+    }
+    
+    modifier exists(uint256 tokenId) {
+        require(_exists(tokenId), "Netbook no existe");
+        _;
+    }
+    
+    ///
+    /// Constructor
+    ///
+    constructor() ERC721("NetbookToken", "NBT") Ownable2Step(msg.sender) {
+        _tokenIdCounter = 1;
+    }
+    
+    /// 
+    /// Funciones Internas - Gestión de Aprobaciones de Roles
+    /// 
+    
+    /// @dev Registra una nueva clave de aprobación de rol en el almacenamiento indexado
+    /// @param account La dirección de la cuenta
+    /// @param role El rol solicitado
+    function _registerRoleApprovalKey(address account, bytes32 role) internal {
+        // Verificar si ya existe
+        if (_roleApprovalIndices[account][role] != 0) {
+            // Ya existe en el mapeo de índices, verificar si es una entrada válida
+            uint256 index = _roleApprovalIndices[account][role] - 1; // Convertir a índice base 0
+            if (index < _roleApprovalKeys.length && 
+                _roleApprovalKeys[index].account == account && 
+                _roleApprovalKeys[index].role == role) {
+                // La entrada ya existe, no hacer nada
+                return;
+            }
+        }
         
-        emit AssignedToStudent(serialNumber, schoolHash, studentHash);
+        // La entrada no existe, agregarla
+        _roleApprovalIndices[account][role] = _roleApprovalKeys.length + 1; // Almacenar índice base 1
+        _roleApprovalKeys.push(RoleApprovalKey(account, role));
     }
     
-    // Funciones de lectura
-    function getNetbookReport(string calldata serialNumber) external view returns (Netbook memory) {
-        return netbooks[serialNumber];
-    }
-    
-    function getNetbookState(string calldata serialNumber) external view returns (NetbookState) {
-        return netbooks[serialNumber].state;
-    }
-}
+    /// @dev Elimina una clave de aprobación de rol del almacenamiento indexado
+    /// @param account La dirección de la cuenta
+    /// @param role El rol
+    function _removeRoleApprovalKey(address account, bytes32 role) internal {
+        uint256 index = _roleApprovalIndices[account][role];
+        if (index == 0) {
+            // No existe
+            return;
+        }
+        
+        // Convertir a índice base 0
+        index--;
+        
+        // Mover el último elemento al lugar del que se está eliminando
+        if (index < _roleApprovalKeys.length - 1) {
+            RoleApprovalKey memory last = _roleApprovalKeys[_roleApprovalKeys.length - 1];
+            _roleApprovalKeys[index] = last;
+            _roleApprovalIndices[last.account][last.role] = index + 1; // Actualizar índice base 1
+        }
+        
+        // Eliminar el último elemento y limpiar el índice
+        _roleApprovalKeys.pop();
+        _roleApproval

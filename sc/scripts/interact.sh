@@ -3,12 +3,31 @@
 # Script para interactuar con el contrato desplegado
 source .env
 
+# Función para leer y mostrar contenido de archivo
+read_file() {
+    local path=$1
+    if [ -f "$path" ]; then
+        echo "Contenido de $path:"
+        echo "----------------------------------------"
+        cat "$path"
+        echo "----------------------------------------"
+    else
+        echo "Error: El archivo $path no existe"
+    fi
+}
+
 # Función para llamar al contrato
 call_contract() {
     local method=$1
     local params=$2
     cast send $CONTRACT_ADDRESS "$method" $params --rpc-url $RPC_URL --private-key $ADMIN_PRIVATE_KEY
 }
+
+# Mostrar contenido del script actual si se solicita
+if [ "$1" = "--show-content" ]; then
+    read_file "$0"
+    exit 0
+fi
 
 echo "Script de interacción con el contrato SupplyChainTracker"
 echo "Contrato: $CONTRACT_ADDRESS"
@@ -17,3 +36,5 @@ echo ""
 echo "Comandos útiles:"
 echo "  call_contract 'methodName' 'param1 param2 ...'"
 echo "  cast call $CONTRACT_ADDRESS 'methodName' --rpc-url $RPC_URL"
+echo "  $0 --show-content  # Muestra el contenido de este script"
+

@@ -7,38 +7,51 @@ import {SupplyChainTracker} from "../src/SupplyChainTracker.sol";
 contract SupplyChainTrackerTest is Test {
     SupplyChainTracker public tracker;
 
-    address fabricante = address(0x1);
-    address auditor = address(0x2);
-    address tecnico = address(0x3);
-    address escuela = address(0x4);
-    address admin = address(this);
+    // Test addresses
+    address constant FABRICANTE_ADDR = address(0x1);
+    address constant AUDITOR_ADDR = address(0x2);
+    address constant TECNICO_ADDR = address(0x3);
+    address constant ESCUELA_ADDR = address(0x4);
+    address ADMIN_ADDR;
+    
+    // Test data
+    string constant TEST_SERIAL = "NB001";
+    string constant TEST_BATCH = "L001";
+    string constant TEST_SPECS = "Intel N100, 8GB RAM, 256GB SSD";
+    bytes32 constant TEST_REPORT_HASH = keccak256("test_report_hash");
 
     function setUp() public {
         tracker = new SupplyChainTracker();
+        ADMIN_ADDR = address(this);
+        _setupApprovedRoles();
+    }
+    
+    function _setupApprovedRoles() internal {
+        // Configurar y aprobar roles para las direcciones de prueba
         
-        // Configurar roles aprobados
-        vm.startPrank(fabricante);
+        // Solicitar roles desde cada dirección usando startPrank/stopPrank
+        vm.startPrank(FABRICANTE_ADDR);
         tracker.requestRoleApproval(tracker.FABRICANTE_ROLE());
         vm.stopPrank();
         
-        vm.startPrank(auditor);
+        vm.startPrank(AUDITOR_ADDR);
         tracker.requestRoleApproval(tracker.AUDITOR_HW_ROLE());
         vm.stopPrank();
         
-        vm.startPrank(tecnico);
+        vm.startPrank(TECNICO_ADDR);
         tracker.requestRoleApproval(tracker.TECNICO_SW_ROLE());
         vm.stopPrank();
         
-        vm.startPrank(escuela);
+        vm.startPrank(ESCUELA_ADDR);
         tracker.requestRoleApproval(tracker.ESCUELA_ROLE());
         vm.stopPrank();
         
-        // Aprobar todos los roles como admin
-        vm.startPrank(admin);
-        tracker.approveRole(tracker.FABRICANTE_ROLE(), fabricante);
-        tracker.approveRole(tracker.AUDITOR_HW_ROLE(), auditor);
-        tracker.approveRole(tracker.TECNICO_SW_ROLE(), tecnico);
-        tracker.approveRole(tracker.ESCUELA_ROLE(), escuela);
+        // Aprobar todos los roles desde admin
+        vm.startPrank(ADMIN_ADDR);
+        tracker.approveRole(tracker.FABRICANTE_ROLE(), FABRICANTE_ADDR);
+        tracker.approveRole(tracker.AUDITOR_HW_ROLE(), AUDITOR_ADDR);
+        tracker.approveRole(tracker.TECNICO_SW_ROLE(), TECNICO_ADDR);
+        tracker.approveRole(tracker.ESCUELA_ROLE(), ESCUELA_ADDR);
         vm.stopPrank();
     }
 
@@ -55,13 +68,13 @@ contract SupplyChainTrackerTest is Test {
         assertEq(uint256(status.state), 0); // Pending
         
         // Aprobar rol
-        vm.prank(admin);
+        vm.prank(ADMIN_ADDR);
         tracker.approveRole(tracker.FABRICANTE_ROLE(), newFabricante);
         
         // Verificar estado aprobado
         status = tracker.getRoleStatus(tracker.FABRICANTE_ROLE(), newFabricante);
         assertEq(uint256(status.state), 1); // Approved
-        assertEq(status.approvedBy, admin);
+        assertEq(status.approvedBy, ADMIN_ADDR);
         assertTrue(status.approvalTimestamp > 0);
     }
     
@@ -73,7 +86,7 @@ contract SupplyChainTrackerTest is Test {
         tracker.requestRoleApproval(tracker.AUDITOR_HW_ROLE());
         
         // Rechazar rol
-        vm.prank(admin);
+        vm.prank(ADMIN_ADDR);
         tracker.rejectRole(tracker.AUDITOR_HW_ROLE(), newAuditor);
         
         // Verificar estado rechazado
@@ -112,7 +125,7 @@ contract SupplyChainTrackerTest is Test {
         batches[1] = "L001";
         specs[1] = "Intel N100, 8GB RAM, 256GB SSD";
 
-        vm.prank(fabricante);
+        vm.prank(FABRICANTE_ADDR);
         tracker.registerNetbooks(serials, batches, specs);
         
         // Verificar estado 1
@@ -133,11 +146,11 @@ contract SupplyChainTrackerTest is Test {
         batches[0] = "L001";
         specs[0] = "Spec";
 
-        vm.prank(fabricante);
+        vm.prank(FABRICANTE_ADDR);
         tracker.registerNetbooks(serials, batches, specs);
         
         vm.expectRevert(unicode"Netbook ya registrada");
-        vm.prank(fabricante);
+        vm.prank(FABRICANTE_ADDR);
         tracker.registerNetbooks(serials, batches, specs);
     }
 
@@ -151,12 +164,12 @@ contract SupplyChainTrackerTest is Test {
         batches[0] = "L001";
         specs[0] = "Spec";
 
-        vm.prank(fabricante);
+        vm.prank(FABRICANTE_ADDR);
         tracker.registerNetbooks(serials, batches, specs);
         
         bytes32 reportHash = keccak256(unicode"report_hw_001");
         
-        vm.prank(auditor);
+        vm.prank(AUDITOR_ADDR);
         tracker.auditHardware(serials[0], true, reportHash);
         
         // Verificar transición de estado
@@ -164,7 +177,7 @@ contract SupplyChainTrackerTest is Test {
         
         // Verificar datos almacenados
         SupplyChainTracker.Netbook memory nb = tracker.getNetbookReport(serials[0]);
-        assertEq(nb.hwAuditor, auditor);
+        assertEq(nb.hwAuditor, AUDITOR_ADDR);
         assertEq(nb.hwIntegrityPassed, true);
         assertEq(nb.hwReportHash, reportHash);
     }
@@ -178,11 +191,11 @@ contract SupplyChainTrackerTest is Test {
         batches[0] = "L001";
         specs[0] = "Spec";
 
-        vm.prank(fabricante);
+        vm.prank(FABRICANTE_ADDR);
         tracker.registerNetbooks(serials, batches, specs);
         
         vm.expectRevert();
-        vm.prank(fabricante); // fabricante intenta auditar
+        vm.prank(FABRICANTE_ADDR); // fabricante intenta auditar
         tracker.auditHardware(serials[0], true, bytes32(0));
     }
 
@@ -195,19 +208,19 @@ contract SupplyChainTrackerTest is Test {
         batches[0] = "L001";
         specs[0] = "Spec";
 
-        vm.prank(fabricante);
+        vm.prank(FABRICANTE_ADDR);
         tracker.registerNetbooks(serials, batches, specs);
         
         // Avanzar legalmente hasta SW_VALIDADO
-        vm.prank(auditor);
+        vm.prank(AUDITOR_ADDR);
         tracker.auditHardware(serials[0], true, bytes32(0));
         
-        vm.prank(tecnico);
+        vm.prank(TECNICO_ADDR);
         tracker.validateSoftware(serials[0], "OS", true);
         
         // Ahora intentar auditar de nuevo - debería fallar porque el estado es SW_VALIDADO, no FABRICADA
         vm.expectRevert(unicode"Estado incorrecto para esta operación");
-        vm.prank(auditor);
+        vm.prank(AUDITOR_ADDR);
         tracker.auditHardware(serials[0], true, bytes32(0));
     }
 
@@ -221,13 +234,13 @@ contract SupplyChainTrackerTest is Test {
         batches[0] = "L001";
         specs[0] = "Spec";
 
-        vm.prank(fabricante);
+        vm.prank(FABRICANTE_ADDR);
         tracker.registerNetbooks(serials, batches, specs);
         
-        vm.prank(auditor);
+        vm.prank(AUDITOR_ADDR);
         tracker.auditHardware(serials[0], true, bytes32(0));
         
-        vm.prank(tecnico);
+        vm.prank(TECNICO_ADDR);
         tracker.validateSoftware(serials[0], "Linux Edu 5.0", true);
         
         // Verificar transición de estado
@@ -235,7 +248,7 @@ contract SupplyChainTrackerTest is Test {
         
         // Verificar datos
         SupplyChainTracker.Netbook memory nb = tracker.getNetbookReport(serials[0]);
-        assertEq(nb.swTechnician, tecnico);
+        assertEq(nb.swTechnician, TECNICO_ADDR);
         assertEq(nb.osVersion, "Linux Edu 5.0");
         assertEq(nb.swValidationPassed, true);
     }
@@ -250,19 +263,19 @@ contract SupplyChainTrackerTest is Test {
         batches[0] = "L001";
         specs[0] = "Spec";
 
-        vm.prank(fabricante);
+        vm.prank(FABRICANTE_ADDR);
         tracker.registerNetbooks(serials, batches, specs);
         
-        vm.prank(auditor);
+        vm.prank(AUDITOR_ADDR);
         tracker.auditHardware(serials[0], true, bytes32(0));
         
-        vm.prank(tecnico);
+        vm.prank(TECNICO_ADDR);
         tracker.validateSoftware(serials[0], "OS", true);
         
         bytes32 schoolHash = keccak256(unicode"Escuela Nacional 1");
         bytes32 studentHash = keccak256(unicode"Juan Pérez");
         
-        vm.prank(escuela);
+        vm.prank(ESCUELA_ADDR);
         tracker.assignToStudent(serials[0], schoolHash, studentHash);
         
         // Verificar transición de estado
@@ -282,19 +295,22 @@ contract SupplyChainTrackerTest is Test {
         address newTecnico = address(0x12);
         
         // Solicitar roles - todos deberían estar pendientes
-        vm.prank(newFabricante);
+        vm.startPrank(newFabricante);
         tracker.requestRoleApproval(tracker.FABRICANTE_ROLE());
+        vm.stopPrank();
         
-        vm.prank(newAuditor);
+        vm.startPrank(newAuditor);
         tracker.requestRoleApproval(tracker.AUDITOR_HW_ROLE());
+        vm.stopPrank();
         
-        vm.prank(newTecnico);
+        vm.startPrank(newTecnico);
         tracker.requestRoleApproval(tracker.TECNICO_SW_ROLE());
+        vm.stopPrank();
         
         // Obtener todas las solicitudes pendientes
         SupplyChainTracker.RoleApproval[] memory pendingRequests = tracker.getAllPendingRoleRequests();
         
-        // Deberíamos tener 3 solicitudes pendientes
+        // Deberíamos tener 3 solicitudes pendientes (las nuevas que acabamos de crear)
         assertEq(pendingRequests.length, 3);
         
         // Verificar que todas las solicitudes están en estado Pendiente (0)
@@ -309,37 +325,26 @@ contract SupplyChainTrackerTest is Test {
         bool foundTecnico = false;
         
         for (uint i = 0; i < pendingRequests.length; i++) {
-            console2.log("Checking request", i);
-            console2.log("  Account:", uint256(uint160(pendingRequests[i].account)));
-            console2.log("  Expected fabricante:", uint256(uint160(newFabricante)));
-            console2.log("  Expected auditor:", uint256(uint160(newAuditor)));
-            console2.log("  Expected tecnico:", uint256(uint160(newTecnico)));
-            
             if (pendingRequests[i].account == newFabricante) {
-                console2.log("Found fabricante request");
                 assertEq(pendingRequests[i].role, tracker.FABRICANTE_ROLE());
                 foundFabricante = true;
             }
             if (pendingRequests[i].account == newAuditor) {
-                console2.log("Found auditor request");
                 assertEq(pendingRequests[i].role, tracker.AUDITOR_HW_ROLE());
                 foundAuditor = true;
             }
             if (pendingRequests[i].account == newTecnico) {
-                console2.log("Found tecnico request");
                 assertEq(pendingRequests[i].role, tracker.TECNICO_SW_ROLE());
                 foundTecnico = true;
             }
         }
         
-        console2.log("foundFabricante:", foundFabricante);
-        console2.log("foundAuditor:", foundAuditor);
-        console2.log("foundTecnico:", foundTecnico);
         assertTrue(foundFabricante && foundAuditor && foundTecnico);
         
         // Aprobar una solicitud
-        vm.prank(admin);
+        vm.startPrank(ADMIN_ADDR);
         tracker.approveRole(tracker.FABRICANTE_ROLE(), newFabricante);
+        vm.stopPrank();
         
         // Obtener nuevamente las solicitudes pendientes
         SupplyChainTracker.RoleApproval[] memory updatedPendingRequests = tracker.getAllPendingRoleRequests();
@@ -356,5 +361,99 @@ contract SupplyChainTrackerTest is Test {
             }
         }
         assertFalse(stillFoundFabricante);
+    }
+
+    // --- Tests adicionales para mejorar cobertura ---
+    
+    function test_CancelRoleRequest() public {
+        address newEscuela = address(0x13);
+        
+        // Solicitar rol
+        vm.startPrank(newEscuela);
+        tracker.requestRoleApproval(tracker.ESCUELA_ROLE());
+        vm.stopPrank();
+        
+        // Verificar que está pendiente primero
+        SupplyChainTracker.RoleApproval memory initialStatus = tracker.getRoleStatus(tracker.ESCUELA_ROLE(), newEscuela);
+        assertEq(uint256(initialStatus.state), 0); // Pending
+        
+        // Cancelar solicitud
+        vm.startPrank(newEscuela);
+        tracker.cancelRoleRequest(tracker.ESCUELA_ROLE());
+        vm.stopPrank();
+        
+        // Verificar estado cancelado
+        SupplyChainTracker.RoleApproval memory status = tracker.getRoleStatus(tracker.ESCUELA_ROLE(), newEscuela);
+        assertEq(uint256(status.state), 3); // Canceled
+    }
+    
+    function test_RevokeRoleApproval() public {
+        // Revocar rol aprobado
+        vm.prank(ADMIN_ADDR);
+        tracker.revokeRoleApproval(tracker.FABRICANTE_ROLE(), FABRICANTE_ADDR);
+        
+        // Verificar estado cancelado
+        SupplyChainTracker.RoleApproval memory status = tracker.getRoleStatus(tracker.FABRICANTE_ROLE(), FABRICANTE_ADDR);
+        assertEq(uint256(status.state), 3); // Canceled
+        
+        // Verificar que no puede registrar netbooks después de revocar rol
+        string[] memory serials = new string[](1);
+        string[] memory batches = new string[](1);
+        string[] memory specs = new string[](1);
+        
+        serials[0] = "NB_REVOKED";
+        batches[0] = "L001";
+        specs[0] = "Spec";
+
+        vm.expectRevert(unicode"Rol no aprobado para esta dirección");
+        vm.prank(FABRICANTE_ADDR);
+        tracker.registerNetbooks(serials, batches, specs);
+    }
+    
+    function test_CannotAuditNonExistentNetbook() public {
+        vm.expectRevert(unicode"Netbook no existe");
+        vm.startPrank(AUDITOR_ADDR);
+        tracker.auditHardware("NON_EXISTENT", true, bytes32(0));
+        vm.stopPrank();
+    }
+    
+    function test_CannotValidateNonExistentNetbook() public {
+        vm.expectRevert(unicode"Netbook no existe");
+        vm.startPrank(TECNICO_ADDR);
+        tracker.validateSoftware("NON_EXISTENT", "OS", true);
+        vm.stopPrank();
+    }
+    
+    function test_CannotAssignNonExistentNetbook() public {
+        vm.expectRevert(unicode"Netbook no existe");
+        vm.startPrank(ESCUELA_ADDR);
+        tracker.assignToStudent("NON_EXISTENT", bytes32(0), bytes32(0));
+        vm.stopPrank();
+    }
+    
+    function test_RegisterMultipleNetbooksInBatch() public {
+        string[] memory serials = new string[](3);
+        string[] memory batches = new string[](3);
+        string[] memory specs = new string[](3);
+        
+        serials[0] = "NB_BATCH_001";
+        serials[1] = "NB_BATCH_002";
+        serials[2] = "NB_BATCH_003";
+        
+        batches[0] = "BATCH_L001";
+        batches[1] = "BATCH_L001";
+        batches[2] = "BATCH_L001";
+        
+        specs[0] = "Spec 1";
+        specs[1] = "Spec 2";
+        specs[2] = "Spec 3";
+
+        vm.prank(FABRICANTE_ADDR);
+        tracker.registerNetbooks(serials, batches, specs);
+        
+        // Verificar que todos fueron registrados
+        assertEq(uint256(tracker.getNetbookState("NB_BATCH_001")), 0);
+        assertEq(uint256(tracker.getNetbookState("NB_BATCH_002")), 0);
+        assertEq(uint256(tracker.getNetbookState("NB_BATCH_003")), 0);
     }
 }
