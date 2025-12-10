@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
-import {Test, console2} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {SupplyChainTracker} from "../src/SupplyChainTracker.sol";
 
 contract SupplyChainTrackerTest is Test {
@@ -12,7 +12,7 @@ contract SupplyChainTrackerTest is Test {
     address constant AUDITOR_ADDR = address(0x2);
     address constant TECNICO_ADDR = address(0x3);
     address constant ESCUELA_ADDR = address(0x4);
-    address ADMIN_ADDR;
+    address adminAddr;
     
     // Test data
     string constant TEST_SERIAL = "NB001";
@@ -22,7 +22,7 @@ contract SupplyChainTrackerTest is Test {
 
     function setUp() public {
         tracker = new SupplyChainTracker();
-        ADMIN_ADDR = address(this);
+        adminAddr = address(this);
         _setupApprovedRoles();
     }
     
@@ -47,7 +47,7 @@ contract SupplyChainTrackerTest is Test {
         vm.stopPrank();
         
         // Aprobar todos los roles desde admin
-        vm.startPrank(ADMIN_ADDR);
+        vm.startPrank(adminAddr);
         tracker.approveRole(tracker.FABRICANTE_ROLE(), FABRICANTE_ADDR);
         tracker.approveRole(tracker.AUDITOR_HW_ROLE(), AUDITOR_ADDR);
         tracker.approveRole(tracker.TECNICO_SW_ROLE(), TECNICO_ADDR);
@@ -68,13 +68,13 @@ contract SupplyChainTrackerTest is Test {
         assertEq(uint256(status.state), 0); // Pending
         
         // Aprobar rol
-        vm.prank(ADMIN_ADDR);
+        vm.prank(adminAddr);
         tracker.approveRole(tracker.FABRICANTE_ROLE(), newFabricante);
         
         // Verificar estado aprobado
         status = tracker.getRoleStatus(tracker.FABRICANTE_ROLE(), newFabricante);
         assertEq(uint256(status.state), 1); // Approved
-        assertEq(status.approvedBy, ADMIN_ADDR);
+        assertEq(status.approvedBy, adminAddr);
         assertTrue(status.approvalTimestamp > 0);
     }
     
@@ -86,7 +86,7 @@ contract SupplyChainTrackerTest is Test {
         tracker.requestRoleApproval(tracker.AUDITOR_HW_ROLE());
         
         // Rechazar rol
-        vm.prank(ADMIN_ADDR);
+        vm.prank(adminAddr);
         tracker.rejectRole(tracker.AUDITOR_HW_ROLE(), newAuditor);
         
         // Verificar estado rechazado
@@ -170,7 +170,7 @@ contract SupplyChainTrackerTest is Test {
         bytes32 reportHash = keccak256(unicode"report_hw_001");
         
         vm.prank(AUDITOR_ADDR);
-        tracker.auditHardware(serials[0], true, reportHash);
+        tracker.auditHardware(serials[0], reportHash);
         
         // Verificar transición de estado
         assertEq(uint256(tracker.getNetbookState(serials[0])), 1); // HW_APROBADO
@@ -196,7 +196,7 @@ contract SupplyChainTrackerTest is Test {
         
         vm.expectRevert();
         vm.prank(FABRICANTE_ADDR); // fabricante intenta auditar
-        tracker.auditHardware(serials[0], true, bytes32(0));
+        tracker.auditHardware(serials[0], bytes32(0));
     }
 
     function test_CannotAuditIfWrongState() public {
@@ -213,15 +213,15 @@ contract SupplyChainTrackerTest is Test {
         
         // Avanzar legalmente hasta SW_VALIDADO
         vm.prank(AUDITOR_ADDR);
-        tracker.auditHardware(serials[0], true, bytes32(0));
+        tracker.auditHardware(serials[0], bytes32(0));
         
         vm.prank(TECNICO_ADDR);
-        tracker.validateSoftware(serials[0], "OS", true);
+        tracker.validateSoftware(serials[0], "OS");
         
         // Ahora intentar auditar de nuevo - debería fallar porque el estado es SW_VALIDADO, no FABRICADA
-        vm.expectRevert(unicode"Estado incorrecto para esta operación");
+        vm.expectRevert(unicode"Estado incorrecto para auditoría de hardware");
         vm.prank(AUDITOR_ADDR);
-        tracker.auditHardware(serials[0], true, bytes32(0));
+        tracker.auditHardware(serials[0], bytes32(0));
     }
 
     // --- Test: Validación de Software ---
@@ -238,10 +238,10 @@ contract SupplyChainTrackerTest is Test {
         tracker.registerNetbooks(serials, batches, specs);
         
         vm.prank(AUDITOR_ADDR);
-        tracker.auditHardware(serials[0], true, bytes32(0));
+        tracker.auditHardware(serials[0], bytes32(0));
         
         vm.prank(TECNICO_ADDR);
-        tracker.validateSoftware(serials[0], "Linux Edu 5.0", true);
+        tracker.validateSoftware(serials[0], "Linux Edu 5.0");
         
         // Verificar transición de estado
         assertEq(uint256(tracker.getNetbookState(serials[0])), 2); // SW_VALIDADO
@@ -267,10 +267,10 @@ contract SupplyChainTrackerTest is Test {
         tracker.registerNetbooks(serials, batches, specs);
         
         vm.prank(AUDITOR_ADDR);
-        tracker.auditHardware(serials[0], true, bytes32(0));
+        tracker.auditHardware(serials[0], bytes32(0));
         
         vm.prank(TECNICO_ADDR);
-        tracker.validateSoftware(serials[0], "OS", true);
+        tracker.validateSoftware(serials[0], "OS");
         
         bytes32 schoolHash = keccak256(unicode"Escuela Nacional 1");
         bytes32 studentHash = keccak256(unicode"Juan Pérez");
@@ -342,7 +342,7 @@ contract SupplyChainTrackerTest is Test {
         assertTrue(foundFabricante && foundAuditor && foundTecnico);
         
         // Aprobar una solicitud
-        vm.startPrank(ADMIN_ADDR);
+        vm.startPrank(adminAddr);
         tracker.approveRole(tracker.FABRICANTE_ROLE(), newFabricante);
         vm.stopPrank();
         
@@ -389,7 +389,7 @@ contract SupplyChainTrackerTest is Test {
     
     function test_RevokeRoleApproval() public {
         // Revocar rol aprobado
-        vm.prank(ADMIN_ADDR);
+        vm.prank(adminAddr);
         tracker.revokeRoleApproval(tracker.FABRICANTE_ROLE(), FABRICANTE_ADDR);
         
         // Verificar estado cancelado
@@ -413,14 +413,14 @@ contract SupplyChainTrackerTest is Test {
     function test_CannotAuditNonExistentNetbook() public {
         vm.expectRevert(unicode"Netbook no existe");
         vm.startPrank(AUDITOR_ADDR);
-        tracker.auditHardware("NON_EXISTENT", true, bytes32(0));
+        tracker.auditHardware("NON_EXISTENT", bytes32(0));
         vm.stopPrank();
     }
     
     function test_CannotValidateNonExistentNetbook() public {
         vm.expectRevert(unicode"Netbook no existe");
         vm.startPrank(TECNICO_ADDR);
-        tracker.validateSoftware("NON_EXISTENT", "OS", true);
+        tracker.validateSoftware("NON_EXISTENT", "OS");
         vm.stopPrank();
     }
     
