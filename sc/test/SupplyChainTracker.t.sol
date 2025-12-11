@@ -129,11 +129,11 @@ contract SupplyChainTrackerTest is Test {
         tracker.registerNetbooks(serials, batches, specs);
         
         // Verificar estado 1
-        assertEq(uint256(tracker.getNetbookState(serials[0])), 0); // FABRICADA
+        assertEq(uint8(tracker.getNetbookState(serials[0])), 0); // INITIALIZED
         assertEq(tracker.getNetbookReport(serials[0]).batchId, batches[0]);
         
         // Verificar estado 2
-        assertEq(uint256(tracker.getNetbookState(serials[1])), 0); // FABRICADA
+        assertEq(uint8(tracker.getNetbookState(serials[1])), 0); // INITIALIZED
         assertEq(tracker.getNetbookReport(serials[1]).batchId, batches[1]);
     }
 
@@ -173,7 +173,7 @@ contract SupplyChainTrackerTest is Test {
         tracker.auditHardware(serials[0], reportHash);
         
         // Verificar transición de estado
-        assertEq(uint256(tracker.getNetbookState(serials[0])), 1); // HW_APROBADO
+        assertEq(uint8(tracker.getNetbookState(serials[0])), 1); // IN_CIRCULATION
         
         // Verificar datos almacenados
         SupplyChainTracker.Netbook memory nb = tracker.getNetbookReport(serials[0]);
@@ -244,7 +244,7 @@ contract SupplyChainTrackerTest is Test {
         tracker.validateSoftware(serials[0], "Linux Edu 5.0");
         
         // Verificar transición de estado
-        assertEq(uint256(tracker.getNetbookState(serials[0])), 2); // SW_VALIDADO
+        assertEq(uint8(tracker.getNetbookState(serials[0])), 2); // VERIFIED
         
         // Verificar datos
         SupplyChainTracker.Netbook memory nb = tracker.getNetbookReport(serials[0]);
@@ -279,7 +279,7 @@ contract SupplyChainTrackerTest is Test {
         tracker.assignToStudent(serials[0], schoolHash, studentHash);
         
         // Verificar transición de estado
-        assertEq(uint256(tracker.getNetbookState(serials[0])), 3); // DISTRIBUIDA
+        assertEq(uint8(tracker.getNetbookState(serials[0])), 3); // DISTRIBUTED
         
         // Verificar datos
         SupplyChainTracker.Netbook memory nb = tracker.getNetbookReport(serials[0]);

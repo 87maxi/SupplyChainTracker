@@ -4,14 +4,16 @@ pragma solidity ^0.8.20;
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {ERC721Enumerable} from "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC721SupplyChain} from "./interfaces/IERC721SupplyChain.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @title SupplyChainTracker - Sistema de Rastreo de Netbooks mediante NFTs
 /// @author Continue
 /// @notice Sistema completo de trazabilidad para netbooks del Plan de Inclusión Digital
 /// Cada netbook es representada como un NFT (nToken) con seguimiento del ciclo de vida
-contract SupplyChainTracker is ERC721Enumerable, AccessControl, IERC721SupplyChain {
+contract SupplyChainTracker is ERC721Enumerable, AccessControl, ReentrancyGuard, IERC721SupplyChain {
     ///
     /// Sobrescribe supportsInterface para combinar AccessControl y ERC721Enumerable
     ///
@@ -105,6 +107,12 @@ contract SupplyChainTracker is ERC721Enumerable, AccessControl, IERC721SupplyCha
     event RoleRejected(bytes32 indexed role, address indexed account, address indexed rejectedBy);
 
     event RoleRequestCanceled(bytes32 indexed role, address indexed account);
+    
+    ///
+    /// Evento para revocación de roles
+    ///
+    // event RoleRevoked(bytes32 indexed role, address indexed account, address indexed revokedBy)
+    // Usando evento de OpenZeppelin AccessControl
 
     ///
     /// Eventos de trazabilidad
@@ -273,20 +281,19 @@ contract SupplyChainTracker is ERC721Enumerable, AccessControl, IERC721SupplyCha
     }
     
     ///
-    /// Obtiene el estado de una netbook
-    ///
-    function getNetbookState(string memory serialNumber) public view returns (uint8) {
-        uint256 tokenId = serialNumberToTokenId[serialNumber];
-        require(tokenId != 0, unicode"Netbook no existe");
-        return uint8(tokenState[tokenId]);
-    }
-    
-    ///
     /// Obtiene el reporte de una netbook
     ///
     function getNetbookReport(string memory serialNumber) public view returns (IERC721SupplyChain.Netbook memory) {
         uint256 tokenId = serialNumberToTokenId[serialNumber];
         require(tokenId != 0, unicode"Netbook no existe");
+        return this.getSupplyChainReport(tokenId);
+    }
+    
+    ///
+    /// Obtiene el reporte de una netbook por tokenId
+    ///
+    function getNetbookReportByTokenId(uint256 tokenId) public view returns (IERC721SupplyChain.Netbook memory) {
+        require(ownerOf(tokenId) != address(0), unicode"Token no existe");
         return this.getSupplyChainReport(tokenId);
     }
 
@@ -311,14 +318,14 @@ contract SupplyChainTracker is ERC721Enumerable, AccessControl, IERC721SupplyCha
     ///
     /// Aprueba un rol para una dirección
     ///
-    function approveRole(bytes32 role, address account) public onlyRole(DEFAULT_ADMIN_ROLE) {
+    function approveRole(bytes32 role, address account) public onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
         require(_roleStatus[role][account].state == RoleState.Pending, unicode"Rol no está pendiente");
-        
+
         _roleApprovals[role][account] = true;
         _roleStatus[role][account].state = RoleState.Approved;
         _roleStatus[role][account].approvedBy = msg.sender;
         _roleStatus[role][account].approvalTimestamp = block.timestamp;
-        
+
         emit RoleApproved(role, account, msg.sender);
         _removePendingRequest(role, account);
     }
@@ -326,13 +333,13 @@ contract SupplyChainTracker is ERC721Enumerable, AccessControl, IERC721SupplyCha
     ///
     /// Rechaza un rol para una dirección
     ///
-    function rejectRole(bytes32 role, address account) public onlyRole(DEFAULT_ADMIN_ROLE) {
+    function rejectRole(bytes32 role, address account) public onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
         require(_roleStatus[role][account].state == RoleState.Pending, unicode"Rol no está pendiente");
-        
+
         _roleStatus[role][account].state = RoleState.Rejected;
         _roleStatus[role][account].approvedBy = msg.sender;
         _roleStatus[role][account].approvalTimestamp = block.timestamp;
-        
+
         emit RoleRejected(role, account, msg.sender);
         _removePendingRequest(role, account);
     }
@@ -340,15 +347,17 @@ contract SupplyChainTracker is ERC721Enumerable, AccessControl, IERC721SupplyCha
     ///
     /// Revoca un rol aprobado
     ///
-    function revokeRoleApproval(bytes32 role, address account) public onlyRole(DEFAULT_ADMIN_ROLE) {
+    function revokeRoleApproval(bytes32 role, address account) public onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
         require(_roleApprovals[role][account], unicode"Rol no está aprobado");
-        
+        require(_roleStatus[role][account].state == RoleState.Approved, unicode"El rol no está en estado aprobado para revocación");
+
         _roleApprovals[role][account] = false;
         _roleStatus[role][account].state = RoleState.Canceled;
         _roleStatus[role][account].approvedBy = msg.sender;
         _roleStatus[role][account].approvalTimestamp = block.timestamp;
-        
-        emit RoleRevoked(role, account, msg.sender);
+
+        _revokeRole(role, account);
+        _removePendingRequest(role, account);
     }
     
     ///
@@ -402,42 +411,44 @@ contract SupplyChainTracker is ERC721Enumerable, AccessControl, IERC721SupplyCha
         ///
     /// Agrega verificación de hardware
     ///
-    function auditHardware(string memory serialNumber, bytes32 reportHash) public onlyAuthorizedVerifier(AUDITOR_HW_ROLE) {
+    function auditHardware(string memory serialNumber, bytes32 reportHash) public onlyAuthorizedVerifier(AUDITOR_HW_ROLE) nonReentrant {
         uint256 tokenId = serialNumberToTokenId[serialNumber];
         require(tokenId != 0, unicode"Netbook no existe");
-        require(tokenState[tokenId] == TokenState.INITIALIZED || tokenState[tokenId] == TokenState.IN_CIRCULATION, unicode"Estado incorrecto para auditoría de hardware");
+        require(tokenState[tokenId] == TokenState.INITIALIZED, unicode"Estado incorrecto para auditoría de hardware");
+        require(reportHash != bytes32(0), unicode"Hash del reporte no puede ser cero");
 
         TokenMetadata storage metadata = tokenMetadata[tokenId];
-        metadata.hardwareAuditReportHash = string(abi.encodePacked(reportHash));
+        metadata.hardwareAuditReportHash = Strings.toHexString(uint256(reportHash), 32);
 
         TokenState previousState = tokenState[tokenId];
         tokenState[tokenId] = TokenState.IN_CIRCULATION;
-        
+
         verificationHistory[tokenId].push(VerificationRecord({
             verifier: msg.sender,
             previousState: previousState,
             newState: TokenState.IN_CIRCULATION,
             timestamp: block.timestamp,
-            certificateHash: string(abi.encodePacked(reportHash))
+            certificateHash: Strings.toHexString(uint256(reportHash), 32)
         }));
-        
-        emit VerificationUpdated(tokenId, previousState, TokenState.IN_CIRCULATION, string(abi.encodePacked(reportHash)));
+
+        emit VerificationUpdated(tokenId, previousState, TokenState.IN_CIRCULATION, Strings.toHexString(uint256(reportHash), 32));
     }
 
     ///
     /// Agrega verificación de software
     ///
-    function validateSoftware(string memory serialNumber, string memory osVersion) public onlyAuthorizedVerifier(TECNICO_SW_ROLE) {
+    function validateSoftware(string memory serialNumber, string memory osVersion) public onlyAuthorizedVerifier(TECNICO_SW_ROLE) nonReentrant {
         uint256 tokenId = serialNumberToTokenId[serialNumber];
         require(tokenId != 0, unicode"Netbook no existe");
         require(tokenState[tokenId] == TokenState.IN_CIRCULATION, unicode"Estado incorrecto para validación de software");
+        require(bytes(osVersion).length > 0, unicode"Versión del sistema operativo no puede ser vacía");
 
         TokenMetadata storage metadata = tokenMetadata[tokenId];
         metadata.softwareValidationReportHash = osVersion;
 
         TokenState previousState = tokenState[tokenId];
         tokenState[tokenId] = TokenState.VERIFIED;
-        
+
         verificationHistory[tokenId].push(VerificationRecord({
             verifier: msg.sender,
             previousState: previousState,
@@ -445,34 +456,38 @@ contract SupplyChainTracker is ERC721Enumerable, AccessControl, IERC721SupplyCha
             timestamp: block.timestamp,
             certificateHash: osVersion
         }));
-        
+
         emit VerificationUpdated(tokenId, previousState, TokenState.VERIFIED, osVersion);
     }
 
     ///
     /// Distribuye una netbook a un estudiante
     ///
-    function assignToStudent(string memory serialNumber, bytes32 schoolHash, bytes32 studentHash) public onlyAuthorizedVerifier(ESCUELA_ROLE) {
+    function assignToStudent(string memory serialNumber, bytes32 schoolHash, bytes32 studentHash) public onlyAuthorizedVerifier(ESCUELA_ROLE) nonReentrant {
         uint256 tokenId = serialNumberToTokenId[serialNumber];
         require(tokenId != 0, unicode"Netbook no existe");
         require(tokenState[tokenId] == TokenState.VERIFIED, unicode"Estado incorrecto para distribución");
+        require(schoolHash != bytes32(0), unicode"Hash de la escuela no puede ser cero");
+        require(studentHash != bytes32(0), unicode"Hash del estudiante no puede ser cero");
 
         TokenMetadata storage metadata = tokenMetadata[tokenId];
+        require(metadata.studentIdHash == bytes32(0), unicode"La netbook ya está asignada a un estudiante");
+        
         metadata.schoolHash = schoolHash;
         metadata.studentIdHash = studentHash;
-        metadata.distributionCertificateHash = string(abi.encodePacked(schoolHash, studentHash));
+        metadata.distributionCertificateHash = string(abi.encodePacked(Strings.toHexString(uint256(schoolHash), 32), Strings.toHexString(uint256(studentHash), 32)));
 
         TokenState previousState = tokenState[tokenId];
         tokenState[tokenId] = TokenState.DISTRIBUTED;
-        
-        verificationHistory[tokenId].push(VerificationRecord(
-            msg.sender,
-            previousState,
-            TokenState.DISTRIBUTED,
-            block.timestamp,
-            string(abi.encodePacked(schoolHash, studentHash))
-        ));
-        
+
+        verificationHistory[tokenId].push(VerificationRecord({
+            verifier: msg.sender,
+            previousState: previousState,
+            newState: TokenState.DISTRIBUTED,
+            timestamp: block.timestamp,
+            certificateHash: string(abi.encodePacked(Strings.toHexString(uint256(schoolHash), 32), Strings.toHexString(uint256(studentHash), 32)))
+        }));
+
         emit DistributionRecorded(tokenId, schoolHash, studentHash, block.timestamp);
     }
 

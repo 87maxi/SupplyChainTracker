@@ -1,84 +1,108 @@
-# Plan de Refactorización: Mejoras de UI/UX y Funcionalidades
+# Plan de Refactorización - SupplyChainTracker
 
-Este documento detalla el plan para refactorizar la interfaz de usuario y experiencia de usuario (UI/UX) del sistema SupplyChainTracker y añadir funcionalidades críticas que actualmente están ausentes o incompletas.
-
-## Objetivo
-
-Mejorar significativamente la experiencia del usuario, aumentar la claridad de los flujos de trabajo y completar el ciclo funcional del sistema mediante la implementación de:
-
-1. Un flujo de solicitud de roles robusto y bien documentado.
-2. Un sistema interactivo de progreso del ciclo de vida de la netbook.
-3. Un comportamiento de búsqueda más eficiente y útil.
-4. Mejoras generales de accesibilidad y feedback visual.
-5. Un sistema de navegación más intuitivo.
+## 📌 Objetivo
+Mejorar la seguridad, funcionalidad y escalabilidad del sistema de trazabilidad de netbooks mediante refactorización priorizada.
 
 ---
 
-## Tareas de Desarrollo y Priorización
+## 🔍 Análisis de Criticidad
 
-### 1. Implementar Sistema Interactivo de Progreso del Ciclo de Vida
-
-**Prioridad**: Alta
-**Componente**: `web/src/components/netbooks/NetbookDetails.tsx` y `web/src/app/admin/netbooks/page.tsx`
-**Estado Actual**: El componente `NetbookDetails` tiene una variable `setExpandedStep` que está siendo utilizada pero no definida, lo que causa un error de React.
-**Tareas**:
-
-- [ ] Definir y gestionar el estado `expandedStep` localmente en `NetbookDetails`.
-- [ ] Implementar la lógica para expandir colapsar cada paso del ciclo de vida al hacer clic en el ícono.
-- [ ] Añadir contenido descriptivo detallado para los pasos de `HW Auditado` (especificaciones del reporte, auditor) y `SW Validado` (versión del Sistema Operativo, resultado). Reutilizar la lógica de renderizado condicional ya presente.
-- [ ] Añadir CSS para asegurar que el contenido expandido no cree desbordamientos y se posicione correctamente (por encima de otros elementos).
-- [ ] Asegurar que solo un paso esté expandido a la vez (comportamiento de acordeón).
-
-### 2. Mejorar el Fluir de Solicitud de Roles
-
-**Prioridad**: Alta
-**Componentes**: `web/src/components/roles/RoleRequest.tsx` y `web/src/app/dashboard/page.tsx`
-**Estado Actual**: La navegación al hacer clic en "Solicitar Roles" en el dashboard no realiza ninguna acción.
-**Tareas**:
-
-- [ ] Añadir un `id="role-request"` al contenedor principal del componente `RoleRequest` (div raíz con `className="space-y-6"`).
-- [ ] Probar que el click en el botón del dashboard desplaza a la vista del componente `RoleRequest`.
-
-### 3. Mejorar la Búsqueda de Netbooks
-
-**Prioridad**: Media
-**Componentes**: `web/src/components/netbooks/NetbookSearch.tsx` y `web/src/app/admin/netbooks/page.tsx`
-**Estado Actual**: No se ha implementado una función para obtener todos los números de serie del contrato.
-**Tareas**:
-
-- [ ] Añadir una función `getAllNetbookSerialNumbers` en el `Web3Service` (`web/src/lib/services/Web3Service.ts`) que simule o implemente la recuperación de todos los seriales. Dado que el contrato no expone esta función, se debe investigar una solución alternativa como el uso de eventos de registro (si están emitidos) o crear una solución en memoria temporal para fines de demostración.
-- [ ] Añadir un mecanismo de autocompletado (autocomplete) al `Input` de búsqueda, sugiriendo números de serie disponibles a medida que el usuario escribe.
-- [ ] Mejorar el feedback visual durante el proceso de búsqueda (spinner, mensaje de "no encontrado").
-
-### 4. Refinamiento General de UI/UX
-
-**Prioridad**: Media
-**Estado Actual**: Aunque el diseño es moderno, se pueden hacer mejoras en coherencia y jerarquía visual.
-**Tareas**:
-
-- [ ] Revisar la consistencia de los colores, bordes y espaciados en todo el sistema, especialmente en `Card`, `Badge` y `Button` components.
-- [ ] Añadir notificaciones `toast` para todas las transacciones (registro de netbooks, auditoría de HW, validación de SW) con el hash de la transacción.
-- [ ] Mejorar el feedback visual de carga en todos los componentes, usando skeletons o animaciones apropiadas.
-- [ ] Añadir `title` o `aria-label` a todos los íconos botón para mejorar el soporte para lectores de pantalla.
-
-### 5. Mejorar la Navegación y Estado
-
-**Prioridad**: Baja
-**Estado Actual**: La navegación es funcional pero podría ser más clara en ciertos puntos.
-**Tareas**:
-
-- [ ] Añadir un `Breadcrumb` en las páginas de `/admin/*` (e.g., `Inicio > Administración > Gestión de Roles`).
-- [ ] Revisar el comportamiento del indicador de roles en el `Header` y asegurar que los permisos sean verificados de manera consistente.
+| Componente               | Riesgo          | Impacto                          |
+|--------------------------|-----------------|----------------------------------|
+| Gestión de Roles (RBAC)  | **Alto**        | Ataques de suplantación          |
+| Máquina de Estados       | **Alto**        | Bloqueos en trazabilidad         |
+| Auditoría de Hardware    | **Medio**       | Reportes no auditables           |
+| Distribución a Estudiantes | **Medio-Alto** | Problemas legales                |
+| Interfaz con Frontend    | **Alto**        | Falta de integración             |
 
 ---
 
-## Implementación Inmediata
+## 📋 Plan de Refactorización
 
-Se comenzará con las tareas de **Alta Prioridad**: El sistema de progreso interactivo y la corrección del flujo de solicitud de roles, ya que son críticos para una experiencia de demostración efectiva.
+### **🔴 Fase 1: Crítico (Seguridad y Funcionalidad)**
+1. **Refactorizar RBAC**
+   - **Archivo**: [`sc/src/SupplyChainTracker.sol`](sc/src/SupplyChainTracker.sol:230-352)
+   - **Acciones**:
+     - Implementar `nonReentrant` en funciones de roles.
+     - Validar `msg.sender` en operaciones sensibles.
+   - **Impacto**: Reduce riesgo de reentrancia y suplantación.
 
-## Dependencias
+2. **Validar Transiciones de Estados**
+   - **Archivo**: [`sc/src/SupplyChainTracker.sol`](sc/src/SupplyChainTracker.sol:405-477)
+   - **Acciones**:
+     - Añadir validaciones estrictas en `auditHardware`, `validateSoftware`.
+     - Usar `onlyApprovedRole` para todas las funciones modificativas.
+   - **Impacto**: Evita estados inválidos.
 
-- La tarea 3 (`Mejorar la Búsqueda de Netbooks`) depende de una solución técnica viable para obtener los números de serie desde la blockchain. Si no es posible, se optará por una solución alternativa mockeada.
-- Las modificaciones en el frontend `web` dependen exclusivamente del estado actual del backend `sc`, que se asume como inmutable para esta fase de refactorización.
+3. **Asegurar Integridad de Reportes**
+   - **Archivo**: [`sc/src/SupplyChainTracker.sol`](sc/src/SupplyChainTracker.sol:405-477)
+   - **Acciones**:
+     - Exigir firmas digitales para reportes.
+     - Almacenar hashes de certificados.
+   - **Impacto**: Aumenta confianza en auditorías.
 
-Este plan será implementado paso a paso, validando cada cambio antes de pasar al siguiente.
+---
+
+### **🟡 Fase 2: Medio-Alto (Consistencia y Escalabilidad)**
+4. **Optimizar Registro de Netbooks**
+   - **Archivo**: [`sc/src/SupplyChainTracker.sol`](sc/src/SupplyChainTracker.sol:242-273)
+   - **Acciones**:
+     - Validar formato de `batchId` y `serialNumber`.
+     - Implementar registro en lotes con costo de gas reducido.
+   - **Impacto**: Elimina duplicados y mejora eficiencia.
+
+5. **Añadir Funcionalidad de Revokación**
+   - **Archivo**: Nuevo método en [`sc/src/SupplyChainTracker.sol`](sc/src/SupplyChainTracker.sol)
+   - **Acciones**:
+     - Implementar `revokeAndReassign` con aprobación administrativa.
+     - Registrar eventos de revokación.
+   - **Impacto**: Resuelve problemas legales en casos de pérdida/robos.
+
+6. **Proteger Historial de Verificación**
+   - **Archivo**: [`sc/src/SupplyChainTracker.sol`](sc/src/SupplyChainTracker.sol:54-60)
+   - **Acciones**:
+     - Usar `immutable` para datos críticos.
+     - Implementar hash del historial.
+   - **Impacto**: Garantiza inmutabilidad de auditorías.
+
+---
+
+### **🟢 Fase 3: Mejoras (Experiencia de Usuario y Escalabilidad)**
+7. **Definir Interfaz para Frontend**
+   - **Archivo**: [`sc/interfaces/IFrontendSupplyChain.sol`](sc/interfaces/IFrontendSupplyChain.sol)
+   - **Acciones**:
+     - Crear ABI y eventos estandarizados.
+     - Documentar endpoints para consultas.
+   - **Impacto**: Facilita integración con la interfaz web.
+
+8. **Optimizar Costos de Gas**
+   - **Archivo**: [`sc/src/SupplyChainTracker.sol`](sc/src/SupplyChainTracker.sol:482-537)
+   - **Acciones**:
+     - Reemplazar bucles con mapeos estáticos.
+     - Usar `struct` para almacenamiento eficiente.
+   - **Impacto**: Reduce costos en operaciones masivas.
+
+9. **Añadir Pruebas para Casos Edge**
+   - **Archivo**: [`sc/test/SupplyChainTracker.t.sol`](sc/test/SupplyChainTracker.t.sol)
+   - **Acciones**:
+     - Tests para revokación de roles y reentrancia.
+     - Pruebas de estrés con `forge`.
+   - **Impacto**: Mejora cobertura y detección de bugs.
+
+---
+
+## 📅 Roadmap
+| Fase      | Duración Estimada | Responsable       |
+|-----------|-------------------|-------------------|
+| Fase 1    | 2 semanas         | Kilo Code         |
+| Fase 2    | 1.5 semanas       | Kilo Code         |
+| Fase 3    | 1 semana          | Kilo Code         |
+
+---
+
+## 📝 Notas
+- **Prioridad**: Enfocarse primero en seguridad (Fase 1) antes de escalabilidad (Fase 3).
+- **Dependencias**: La Fase 3 depende de la implementación de la interfaz en Fase 2.
+- **Pruebas**: Todas las modificaciones deben ser testeadas con `forge` antes de deploy.
+
+---
