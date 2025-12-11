@@ -21,7 +21,13 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
 
   // Create Web3Service instance, passing the current signer
   const web3Service = useMemo(() => {
-    return new Web3Service(signer);
+    console.log('Creating Web3Service instance...');
+    try {
+      return new Web3Service(signer);
+    } catch (error) {
+      console.error('Failed to create Web3Service:', error);
+      return null;
+    }
   }, [signer]);
 
 // Function to check and refresh user roles
@@ -141,7 +147,7 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
     isSchool,
     hasAnyRole,
     refreshRoles,
-    web3Service,
+    web3Service: web3Service || undefined,
   };
 
   return (

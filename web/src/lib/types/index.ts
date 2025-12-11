@@ -131,4 +131,4 @@ export interface NetbookReport {
   state: number;
 }
 
-export { Web3Service } from '../services/Web3Service';
+export { Web3Service, getRoleConstants } from '../services/Web3Service';
