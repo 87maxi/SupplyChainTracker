@@ -18,7 +18,8 @@ contract SupplyChainTrackerTest is Test {
     string constant TEST_SERIAL = "NB001";
     string constant TEST_BATCH = "L001";
     string constant TEST_SPECS = "Intel N100, 8GB RAM, 256GB SSD";
-    bytes32 constant TEST_REPORT_HASH = keccak256("test_report_hash");
+    // Cambiar TEST_REPORT_HASH a una constante de 32 bytes no cero
+    bytes32 constant TEST_REPORT_HASH = keccak256(unicode"valid-test-report-hash");
 
     function setUp() public {
         tracker = new SupplyChainTracker();
@@ -167,7 +168,7 @@ contract SupplyChainTrackerTest is Test {
         vm.prank(FABRICANTE_ADDR);
         tracker.registerNetbooks(serials, batches, specs);
         
-        bytes32 reportHash = keccak256(unicode"report_hw_001");
+        bytes32 reportHash = TEST_REPORT_HASH;
         
         vm.prank(AUDITOR_ADDR);
         tracker.auditHardware(serials[0], reportHash);
@@ -179,6 +180,7 @@ contract SupplyChainTrackerTest is Test {
         SupplyChainTracker.Netbook memory nb = tracker.getNetbookReport(serials[0]);
         assertEq(nb.hwAuditor, AUDITOR_ADDR);
         assertEq(nb.hwIntegrityPassed, true);
+        // Comparar directamente con el reportHash original
         assertEq(nb.hwReportHash, reportHash);
     }
 
@@ -213,10 +215,11 @@ contract SupplyChainTrackerTest is Test {
         
         // Avanzar legalmente hasta SW_VALIDADO
         vm.prank(AUDITOR_ADDR);
-        tracker.auditHardware(serials[0], bytes32(0));
+        tracker.auditHardware(serials[0], TEST_REPORT_HASH);
         
         vm.prank(TECNICO_ADDR);
-        tracker.validateSoftware(serials[0], "OS");
+        // Cambiar a una versión real
+        tracker.validateSoftware(serials[0], "Linux Edu 5.0");
         
         // Ahora intentar auditar de nuevo - debería fallar porque el estado es SW_VALIDADO, no FABRICADA
         vm.expectRevert(unicode"Estado incorrecto para auditoría de hardware");
@@ -270,13 +273,18 @@ contract SupplyChainTrackerTest is Test {
         tracker.auditHardware(serials[0], bytes32(0));
         
         vm.prank(TECNICO_ADDR);
-        tracker.validateSoftware(serials[0], "OS");
+        // Cambiar a una versión real
+        tracker.validateSoftware(serials[0], "Linux Edu 5.0");
         
         bytes32 schoolHash = keccak256(unicode"Escuela Nacional 1");
         bytes32 studentHash = keccak256(unicode"Juan Pérez");
         
+        // Cambiar a hashes no cero
+        bytes32 validSchoolHash = keccak256(unicode"Escuela Nacional 1");
+        bytes32 validStudentHash = keccak256(unicode"Juan Pérez");
+        
         vm.prank(ESCUELA_ADDR);
-        tracker.assignToStudent(serials[0], schoolHash, studentHash);
+        tracker.assignToStudent(serials[0], validSchoolHash, validStudentHash);
         
         // Verificar transición de estado
         assertEq(uint8(tracker.getNetbookState(serials[0])), 3); // DISTRIBUTED
