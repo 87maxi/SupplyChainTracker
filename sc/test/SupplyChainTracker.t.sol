@@ -452,8 +452,8 @@ contract SupplyChainTrackerTest is Test {
         tracker.registerNetbooks(serials, batches, specs);
         
         // Verificar que todos fueron registrados
-        assertEq(uint256(tracker.getNetbookState("NB_BATCH_001")), 0);
-        assertEq(uint256(tracker.getNetbookState("NB_BATCH_002")), 0);
-        assertEq(uint256(tracker.getNetbookState("NB_BATCH_003")), 0);
+        assertEq(uint8(tracker.getNetbookState("NB_BATCH_001")), 0);
+        assertEq(uint8(tracker.getNetbookState("NB_BATCH_002")), 0);
+        assertEq(uint8(tracker.getNetbookState("NB_BATCH_003")), 0);
     }
 }
