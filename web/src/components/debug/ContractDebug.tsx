@@ -90,9 +90,10 @@ export function ContractDebug() {
         console.log('Testing direct contract call...');
         const contract = new ethers.Contract(
           process.env.NEXT_PUBLIC_CONTRACT_ADDRESS!,
-          SupplyChainTrackerABI,
+          SupplyChainTrackerABI.abi,
           provider
         );
+
 
         const directResult = await contract.hasRole(adminRole, anvilAdmin);
         console.log('Direct contract call result:', directResult, 'Type:', typeof directResult);

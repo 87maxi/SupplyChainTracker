@@ -61,7 +61,7 @@ describe('Web3Service', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockConsoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockConsoleError = jest.spyOn(console, 'error').mockImplementation(() => { });
     web3Service = new Web3Service();
   });
 
@@ -87,12 +87,12 @@ describe('Web3Service', () => {
     it('should call registerNetbook on the contract with correct parameters', async () => {
       const batchId = 'batch-001';
       const serialNumber = 'SN001';
-      
+
       const mockTx = { wait: jest.fn().mockResolvedValue('transaction-receipt') };
       (global as any).ethers.Contract.mock.results[0].value.registerNetbook.mockResolvedValue(mockTx);
-      
+
       const result = await web3Service.registerNetbook(batchId, serialNumber);
-      
+
       expect((global as any).ethers.Contract.mock.results[0].value.registerNetbook).toHaveBeenCalledWith(batchId, serialNumber);
       expect(result).toBe('transaction-receipt');
     });
@@ -100,12 +100,12 @@ describe('Web3Service', () => {
     it('should call auditHardware on the contract with correct parameters', async () => {
       const deviceId = 1;
       const report = 'Hardware audit report';
-      
+
       const mockTx = { wait: jest.fn().mockResolvedValue('transaction-receipt') };
       (global as any).ethers.Contract.mock.results[0].value.auditHardware.mockResolvedValue(mockTx);
-      
+
       const result = await web3Service.auditHardware(deviceId, report);
-      
+
       expect((global as any).ethers.Contract.mock.results[0].value.auditHardware).toHaveBeenCalledWith(deviceId, report);
       expect(result).toBe('transaction-receipt');
     });
@@ -113,12 +113,12 @@ describe('Web3Service', () => {
     it('should call validateSoftware on the contract with correct parameters', async () => {
       const deviceId = 1;
       const report = 'Software validation report';
-      
+
       const mockTx = { wait: jest.fn().mockResolvedValue('transaction-receipt') };
       (global as any).ethers.Contract.mock.results[0].value.validateSoftware.mockResolvedValue(mockTx);
-      
+
       const result = await web3Service.validateSoftware(deviceId, report);
-      
+
       expect((global as any).ethers.Contract.mock.results[0].value.validateSoftware).toHaveBeenCalledWith(deviceId, report);
       expect(result).toBe('transaction-receipt');
     });
@@ -127,12 +127,12 @@ describe('Web3Service', () => {
       const deviceId = 1;
       const studentId = 'student-001';
       const studentName = 'John Doe';
-      
+
       const mockTx = { wait: jest.fn().mockResolvedValue('transaction-receipt') };
       (global as any).ethers.Contract.mock.results[0].value.assignToStudent.mockResolvedValue(mockTx);
-      
+
       const result = await web3Service.assignToStudent(deviceId, studentId, studentName);
-      
+
       expect((global as any).ethers.Contract.mock.results[0].value.assignToStudent).toHaveBeenCalledWith(deviceId, studentId, studentName);
       expect(result).toBe('transaction-receipt');
     });
@@ -149,11 +149,11 @@ describe('Web3Service', () => {
         timestamp: { toNumber: jest.fn().mockReturnValue(1234567890) },
         verifier: '0x1234567890123456789012345678901234567890'
       };
-      
+
       (global as any).ethers.Contract.mock.results[0].value.getVerificationReport.mockResolvedValue(mockReport);
-      
+
       const result = await web3Service.getVerificationReport(reportId);
-      
+
       expect((global as any).ethers.Contract.mock.results[0].value.getVerificationReport).toHaveBeenCalledWith(reportId);
       expect(result).toEqual({
         id: reportId,
@@ -173,14 +173,19 @@ describe('Web3Service', () => {
         timestamp: { toNumber: jest.fn().mockReturnValue(1234567890) },
         actor: '0x1234567890123456789012345678901234567890'
       }];
-      
+
       (global as any).ethers.Contract.mock.results[0].value.getDeviceHistory.mockResolvedValue(mockHistory);
-      
+
       const result = await web3Service.getDeviceHistory(deviceId);
-      
+
       expect((global as any).ethers.Contract.mock.results[0].value.getDeviceHistory).toHaveBeenCalledWith(deviceId);
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({
         id: 1,
         action: 'REGISTERED',
-        timestamp: 12345678
+        timestamp: 1234567890,
+        actor: '0x1234567890123456789012345678901234567890'
+      });
+    });
+  });
+});

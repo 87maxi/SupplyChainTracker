@@ -48,7 +48,7 @@ describe('RoleManagement', () => {
 
   it('debería renderizar el formulario de búsqueda de usuarios', () => {
     render(<RoleManagement />);
-    
+
     expect(screen.getByPlaceholderText('0x...')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /search/i })).toBeInTheDocument();
     expect(screen.getByText('Gestión de Roles')).toBeInTheDocument();
@@ -57,15 +57,15 @@ describe('RoleManagement', () => {
   it('debería mostrar error si la dirección es inválida', async () => {
     // Mock de función de validación
     jest.spyOn(require('@/lib/utils'), 'isValidAddress').mockReturnValue(false);
-    
+
     render(<RoleManagement />);
-    
+
     const input = screen.getByPlaceholderText('0x...');
     const searchButton = screen.getByRole('button', { name: /search/i });
-    
+
     fireEvent.change(input, { target: { value: 'dirección-inválida' } });
     fireEvent.click(searchButton);
-    
+
     await waitFor(() => {
       expect(require('sonner').toast.error).toHaveBeenCalledWith('Dirección inválida');
     });
@@ -74,20 +74,20 @@ describe('RoleManagement', () => {
   it('debería buscar un usuario por dirección y mostrar sus estados de rol', async () => {
     // Mock de función de validación
     jest.spyOn(require('@/lib/utils'), 'isValidAddress').mockReturnValue(true);
-    
+
     render(<RoleManagement />);
-    
+
     const input = screen.getByPlaceholderText('0x...');
     const searchButton = screen.getByRole('button', { name: /search/i });
-    
+
     fireEvent.change(input, { target: { value: '0x1234567890123456789012345678901234567890' } });
     fireEvent.click(searchButton);
-    
+
     // Simulamos que se encontró un usuario con rol pendiente
     await waitFor(() => {
       expect(screen.getByText(/Estado de Roles para/)).toBeInTheDocument();
     });
-    
+
     expect(screen.getByText(/Fabricante/i)).toBeInTheDocument();
     expect(screen.getByText(/Pendiente/i)).toBeInTheDocument();
   });
@@ -117,33 +117,33 @@ describe('RoleManagement', () => {
         revokeRoleApproval: jest.fn()
       }
     }));
-    
+
     // Mock validación
     jest.spyOn(require('@/lib/utils'), 'isValidAddress').mockReturnValue(true);
-    
+
     render(<RoleManagement />);
-    
+
     const input = screen.getByPlaceholderText('0x...');
     fireEvent.change(input, { target: { value: '0x1234567890123456789012345678901234567890' } });
     fireEvent.click(screen.getByRole('button', { name: /search/i }));
-    
+
     await waitFor(() => {
       expect(screen.getByText(/Pendiente/i)).toBeInTheDocument();
     });
-    
+
     // Buscar botón de Aprobar
     const approveButton = screen.getByRole('button', { name: /Aprobar/i });
     fireEvent.click(approveButton);
-    
+
     await waitFor(() => {
       expect(require('@/lib/contexts/Web3Context').useWeb3().web3Service.approveRole)
         .toHaveBeenCalledWith('FAB_ROLE', '0x1234567890123456789012345678901234567890');
     });
-    
+
     await waitFor(() => {
       expect(require('sonner').toast.success).toHaveBeenCalledWith('Rol aprobado con éxito');
     });
-    
+
     // Después de aprobar, debería cambiar a Aprobado
     expect(await screen.findByText(/Aprobado/i)).toBeInTheDocument();
   });
@@ -164,20 +164,20 @@ describe('RoleManagement', () => {
         revokeRoleApproval: jest.fn()
       }
     }));
-    
+
     jest.spyOn(require('@/lib/utils'), 'isValidAddress').mockReturnValue(true);
-    
+
     render(<RoleManagement />);
-    
+
     const input = screen.getByPlaceholderText('0x...');
     fireEvent.change(input, { target: { value: '0x123...' } });
     fireEvent.click(screen.getByRole('button', { name: /search/i }));
-    
+
     await waitFor(() => {
       const rejectButton = screen.getByRole('button', { name: /Rechazar/i });
       fireEvent.click(rejectButton);
     });
-    
+
     await waitFor(() => {
       expect(require('@/lib/contexts/Web3Context').useWeb3().web3Service.rejectRole)
         .toHaveBeenCalledWith('FAB_ROLE', '0x123...');
@@ -201,20 +201,20 @@ describe('RoleManagement', () => {
         rejectRole: jest.fn()
       }
     }));
-    
+
     jest.spyOn(require('@/lib/utils'), 'isValidAddress').mockReturnValue(true);
-    
+
     render(<RoleManagement />);
-    
+
     const input = screen.getByPlaceholderText('0x...');
     fireEvent.change(input, { target: { value: '0x123...' } });
     fireEvent.click(screen.getByRole('button', { name: /search/i }));
-    
+
     await waitFor(() => {
       const revokeButton = screen.getByRole('button', { name: /Revocar/i });
       fireEvent.click(revokeButton);
     });
-    
+
     await waitFor(() => {
       expect(require('@/lib/contexts/Web3Context').useWeb3().web3Service.revokeRoleApproval)
         .toHaveBeenCalledWith('FAB_ROLE', '0x123...');
@@ -238,20 +238,20 @@ describe('RoleManagement', () => {
         revokeRoleApproval: jest.fn()
       }
     }));
-    
+
     jest.spyOn(require('@/lib/utils'), 'isValidAddress').mockReturnValue(true);
-    
+
     render(<RoleManagement />);
-    
+
     const input = screen.getByPlaceholderText('0x...');
     fireEvent.change(input, { target: { value: '0x123...' } });
     fireEvent.click(screen.getByRole('button', { name: /search/i }));
-    
+
     await waitFor(() => {
       const approveButton = screen.getByRole('button', { name: /Aprobar/i });
       fireEvent.click(approveButton);
     });
-    
+
     await waitFor(() => {
       expect(require('sonner').toast.error).toHaveBeenCalledWith('Error al aprobar rol', { description: 'Error de red' });
     });
@@ -273,20 +273,20 @@ describe('RoleManagement', () => {
         revokeRoleApproval: jest.fn()
       }
     }));
-    
+
     jest.spyOn(require('@/lib/utils'), 'isValidAddress').mockReturnValue(true);
-    
+
     render(<RoleManagement />);
-    
+
     const input = screen.getByPlaceholderText('0x...');
     fireEvent.change(input, { target: { value: '0x123...' } });
     fireEvent.click(screen.getByRole('button', { name: /search/i }));
-    
+
     await waitFor(() => {
       const rejectButton = screen.getByRole('button', { name: /Rechazar/i });
       fireEvent.click(rejectButton);
     });
-    
+
     await waitFor(() => {
       expect(require('sonner').toast.error).toHaveBeenCalledWith('Error al rechazar rol', { description: 'Error de red' });
     });
@@ -315,15 +315,15 @@ describe('RoleManagement', () => {
         revokeRoleApproval: jest.fn().mockResolvedValue('0xghi789')
       }
     }));
-    
+
     jest.spyOn(require('@/lib/utils'), 'isValidAddress').mockReturnValue(true);
-    
+
     render(<RoleManagement />);
-    
+
     const input = screen.getByPlaceholderText('0x...');
     fireEvent.change(input, { target: { value: '0x123...' } });
     fireEvent.click(screen.getByRole('button', { name: /search/i }));
-    
+
     await waitFor(() => {
       expect(screen.getByText(/Fabricante/i)).toBeInTheDocument();
       expect(screen.getByText(/Aprobado/i)).toBeInTheDocument();
@@ -331,3 +331,4 @@ describe('RoleManagement', () => {
       expect(screen.getByText(/Pendiente/i)).toBeInTheDocument();
     });
   });
+});

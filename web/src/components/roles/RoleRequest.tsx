@@ -25,15 +25,15 @@ interface RoleStatus extends UserRoleStatus {
 
 export function RoleRequest() {
     const { address, isConnected, web3Service } = useWeb3();
-    
+
     // Scroll to this component when mounted (for navigation from dashboard)
     useEffect(() => {
-      if (window.location.hash === '#role-request') {
-        const element = document.getElementById('role-request');
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth' });
+        if (window.location.hash === '#role-request') {
+            const element = document.getElementById('role-request');
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth' });
+            }
         }
-      }
     }, []);
     const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
     const [roleStatuses, setRoleStatuses] = useState<RoleStatus[]>([]);
@@ -65,7 +65,7 @@ export function RoleRequest() {
             description: 'Receptora final de los equipos. Confirma recepción y estado.'
         }
     ], []);
-    
+
     const [dynamicRoles, setDynamicRoles] = useState<Array<{
         value: string;
         label: string;
@@ -74,48 +74,51 @@ export function RoleRequest() {
     }>>(roles);
 
     // Create a stable function to fetch statuses
-      const fetchStatuses = useCallback(async () => {
-    if (!isConnected || !address || !web3Service) return;
+    const fetchStatuses = useCallback(async () => {
+        if (!isConnected || !address || !web3Service) return;
 
-    setFetching(true);
-    try {
-      const roleConstants = getRoleConstants();
-      const statuses = await Promise.all(
-        roles.map(async (role) => {
-          const status: UserRoleStatus = await web3Service.getRoleStatus(role.value, address);
-          return {
-            ...status,
-            role: role.value,
-            roleName: role.label,
-            description: role.description
-          } as RoleStatus;
-        })
-      );
-      setRoleStatuses(statuses);
-    } catch (error) {
-      console.error('Error fetching role statuses:', error);
-      toast.error('Error al obtener estados de roles');
-    } finally {
-      setFetching(false);
-    }
-  }, [isConnected, address, web3Service, roles]);
-  
-  // Set up event listeners for role status updates
-  useEffect(() => {
-    if (!web3Service) return;
-    
-    const handleRoleStatusUpdated = (event: any) => {
-      if (event.event === 'RoleStatusUpdated') {
-        fetchStatuses();
-      }
-    };
-    
-    web3Service.setupEventListener('RoleStatusUpdated', handleRoleStatusUpdated);
-    
-    return () => {
-      web3Service.removeAllEventListeners();
-    };
-  }, [web3Service, fetchStatuses]);
+        setFetching(true);
+        try {
+            const roleConstants = getRoleConstants();
+            const statuses = await Promise.all(
+                roles.map(async (role) => {
+                    const status: UserRoleStatus = await web3Service.getRoleStatus(role.value, address);
+                    return {
+                        ...status,
+                        role: role.value,
+                        roleName: role.label,
+                        description: role.description
+                    } as RoleStatus;
+                })
+            );
+            setRoleStatuses(statuses);
+        } catch (error) {
+            console.error('Error fetching role statuses:', error);
+            toast.error('Error al obtener estados de roles');
+        } finally {
+            setFetching(false);
+        }
+    }, [isConnected, address, web3Service, roles]);
+
+    // Set up event listeners for role status updates
+    useEffect(() => {
+        if (!web3Service) return;
+
+        const handleRoleEvent = () => {
+            console.log('Role event detected, refreshing statuses...');
+            fetchStatuses();
+        };
+
+        // Listen to all role-related events
+        web3Service.setupEventListener('RoleRequested', handleRoleEvent);
+        web3Service.setupEventListener('RoleApproved', handleRoleEvent);
+        web3Service.setupEventListener('RoleRejected', handleRoleEvent);
+        web3Service.setupEventListener('RoleRequestCanceled', handleRoleEvent);
+
+        return () => {
+            web3Service.removeAllEventListeners();
+        };
+    }, [web3Service, fetchStatuses]);
 
     useEffect(() => {
         fetchStatuses();
@@ -127,26 +130,62 @@ export function RoleRequest() {
             return;
         }
         setLoadingStates(prev => ({ ...prev, [role]: true }));
+
+        // Show initial toast
+        const loadingToast = toast.loading('Esperando confirmación de la wallet...', {
+            description: 'Por favor, confirma la transacción en tu wallet'
+        });
+
         try {
             const txHash = await web3Service.requestRoleApproval(role);
             console.log('Role request transaction hash:', txHash);
-            toast.success('Solicitud enviada con éxito', {
-                description: `Transacción: ${txHash.slice(0, 6)}...${txHash.slice(-4)}`
+
+            // Update toast to show transaction is pending
+            toast.loading('Transacción enviada, esperando confirmación...', {
+                id: loadingToast,
+                description: `Hash: ${txHash.slice(0, 10)}...${txHash.slice(-8)}`
             });
-            
+
+            // Wait a bit for the transaction to be mined
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // Success toast
+            toast.success('¡Solicitud enviada con éxito!', {
+                id: loadingToast,
+                description: `Tu solicitud está pendiente de aprobación por un administrador.`,
+                duration: 5000
+            });
+
             // Optimistically update the UI
-            setRoleStatuses(prev => prev.map(status => 
-                status.role === role 
+            setRoleStatuses(prev => prev.map(status =>
+                status.role === role
                     ? { ...status, state: 0, account: address || '0x0000000000000000000000000000000000000000' }
                     : status
             ));
+
+            // Refresh from blockchain after a delay
+            setTimeout(() => fetchStatuses(), 2000);
         } catch (error: unknown) {
+            console.error('Error requesting role:', error);
             const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
-            toast.error('Error al enviar solicitud', { description: errorMessage });
-            
+
+            // Check if user rejected the transaction
+            if (errorMessage.includes('user rejected') || errorMessage.includes('User denied')) {
+                toast.error('Transacción cancelada', {
+                    id: loadingToast,
+                    description: 'Has cancelado la transacción en tu wallet.'
+                });
+            } else {
+                toast.error('Error al enviar solicitud', {
+                    id: loadingToast,
+                    description: errorMessage
+                });
+            }
+
             // Revert optimistic update on error
             await fetchStatuses();
         } finally {
+
             setLoadingStates(prev => ({ ...prev, [role]: false }));
         }
     };
@@ -157,16 +196,51 @@ export function RoleRequest() {
             return;
         }
         setLoadingStates(prev => ({ ...prev, [role]: true }));
+
+        // Show initial toast
+        const loadingToast = toast.loading('Esperando confirmación de la wallet...', {
+            description: 'Por favor, confirma la cancelación en tu wallet'
+        });
+
         try {
             const txHash = await web3Service.cancelRoleRequest(role);
-            toast.success('Solicitud cancelada con éxito', {
-                description: `Transacción: ${txHash.slice(0, 6)}...${txHash.slice(-4)}`
+
+            // Update toast to show transaction is pending
+            toast.loading('Transacción enviada, esperando confirmación...', {
+                id: loadingToast,
+                description: `Hash: ${txHash.slice(0, 10)}...${txHash.slice(-8)}`
             });
-            await fetchStatuses();
+
+            // Wait a bit for the transaction to be mined
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // Success toast
+            toast.success('Solicitud cancelada con éxito', {
+                id: loadingToast,
+                description: 'Tu solicitud ha sido cancelada.',
+                duration: 5000
+            });
+
+            // Refresh from blockchain
+            setTimeout(() => fetchStatuses(), 2000);
         } catch (error: unknown) {
+            console.error('Error canceling role:', error);
             const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
-            toast.error('Error al cancelar solicitud', { description: errorMessage });
+
+            // Check if user rejected the transaction
+            if (errorMessage.includes('user rejected') || errorMessage.includes('User denied')) {
+                toast.error('Cancelación rechazada', {
+                    id: loadingToast,
+                    description: 'Has cancelado la transacción en tu wallet.'
+                });
+            } else {
+                toast.error('Error al cancelar solicitud', {
+                    id: loadingToast,
+                    description: errorMessage
+                });
+            }
         } finally {
+
             setLoadingStates(prev => ({ ...prev, [role]: false }));
         }
     };
@@ -319,19 +393,19 @@ export function RoleRequest() {
                                         </Button>
                                     )}
 
-                                                {status.state === 1 && (
-                <div className="w-full py-2 text-center text-sm font-medium text-green-600 bg-green-50 rounded-md border border-green-100 flex items-center justify-center gap-2">
-                    <CheckCircle2 className="w-4 h-4" />
-                    Acceso Concedido
-                </div>
-            )}
+                                    {status.state === 1 && (
+                                        <div className="w-full py-2 text-center text-sm font-medium text-green-600 bg-green-50 rounded-md border border-green-100 flex items-center justify-center gap-2">
+                                            <CheckCircle2 className="w-4 h-4" />
+                                            Acceso Concedido
+                                        </div>
+                                    )}
 
-            {status.state === 2 && (
-                <div className="w-full py-2 text-center text-sm font-medium text-red-600 bg-red-50 rounded-md border border-red-100 flex items-center justify-center gap-2">
-                    <XCircle className="w-4 h-4" />
-                    Acceso Denegado Permanentemente
-                </div>
-            )}
+                                    {status.state === 2 && (
+                                        <div className="w-full py-2 text-center text-sm font-medium text-red-600 bg-red-50 rounded-md border border-red-100 flex items-center justify-center gap-2">
+                                            <XCircle className="w-4 h-4" />
+                                            Acceso Denegado Permanentemente
+                                        </div>
+                                    )}
                                 </CardFooter>
                             </Card>
                         );

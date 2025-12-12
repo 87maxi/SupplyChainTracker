@@ -22,7 +22,9 @@ const nextConfig: NextConfig = {
   },
   // Configuración explícita de turbopack para silenciar el error
   // y mantener compatibilidad con configuraciones existentes
-  turbopack: {},
+  turbopack: {
+    root: process.cwd(),
+  },
 };
 
 export default nextConfig;
