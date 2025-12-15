@@ -1,157 +1,192 @@
-# Análisis del Contrato Smart: SupplyChainTracker.sol
+# Análisis del Contrato Smart SupplyChainTracker
 
-Este documento presenta un análisis detallado del contrato inteligente `SupplyChainTracker.sol`, que implementa un sistema de trazabilidad para netbooks con gestión de roles y estados.
+## Descripción General
 
-## 1. Información General
+El contrato `SupplyChainTracker` es un sistema completo de trazabilidad para netbooks del Plan de Inclusión Digital, donde cada netbook es representada como un NFT (nToken) con seguimiento del ciclo de vida. El contrato hereda de varias implementaciones estándar de OpenZeppelin:
 
-- **Nombre**: `SupplyChainTracker`
-- **Ubicación**: `sc/src/SupplyChainTracker.sol`
-- **Lenguaje**: Solidity ^0.8.13
-- **Framework**: Foundry
-- **Bibliotecas**: OpenZeppelin AccessControl
-- **Función Principal**: Gestiona la trazabilidad de netbooks a través de una máquina de estados, con control de acceso basado en roles.
+- `ERC721Enumerable`: Estándar de tokens no fungibles con funcionalidad enumerativa
+- `AccessControl`: Sistema de control de acceso basado en roles
+- `ReentrancyGuard`: Protección contra ataques de reentrada
+- `IERC721SupplyChain`: Interfaz personalizada para el rastreo de cadena de suministro
 
-## 2. Framework y Configuración
+## Framework y Herramientas Utilizadas
 
-El proyecto `sc` utiliza **Foundry** como framework de desarrollo para contratos inteligentes:
+El contrato fue implementado utilizando **Foundry**, como evidencia:
+- Archivo `foundry.toml` de configuración presente
+- Subdirectorios `script/` y `test/` que siguen la estructura de Foundry
+- Archivos `remappings.txt` para manejo de dependencias
+- Presencia de OpenZeppelin Contracts v4.9.6 como dependencia
 
-- **`foundry.toml`**: Configura los directorios `src`, `out` y `lib`, y especifica las dependencias en `lib`.
-- **Dependencias**: Se usa OpenZeppelin AccessControl (`@openzeppelin/contracts/access/AccessControl.sol`) para el control de autorizaciones.
-- **Pruebas**: Utiliza el sistema de pruebas de Foundry (script `test/SupplyChainTracker.t.sol`, ejecutable con `forge test`).
-- **Despliegue**: Scripts en `script/` y `scripts/` para desplegar y interactuar con el contrato.
+## Estructuras de Datos Principales
 
-## 3. Análisis del Contrato
+### TokenMetadata
 
-### 3.1. Imports y Dependencias
-
-```solidity
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-```
-
-Se importa `AccessControl` de OpenZeppelin, que proporciona un sistema robusto basado en roles para gestionar permisos. El contrato hereda todas sus funcionalidades.
-
-### 3.2. Roles Definidos
-
-Se definen 4 roles específicos para el ciclo de vida de la netbook:
-
-| Rol | Hash (bytes32) | Descripción |
-|---|---|---|
-| `FABRICANTE_ROLE` | keccak256("FABRICANTE_ROLE") | Entidad que fabrica y registra las netbooks |
-| `AUDITOR_HW_ROLE` | keccak256("AUDITOR_HW_ROLE") | Entidad que verifica la integridad del hardware |
-| `TECNICO_SW_ROLE` | keccak256("TECNICO_SW_ROLE") | Entidad que instala y valida el software |
-| `ESCUELA_ROLE` | keccak256("ESCUELA_ROLE") | Escuela que recibe y asigna la netbook al estudiante |
-
-Además, hereda `DEFAULT_ADMIN_ROLE` de OpenZeppelin para gestionar los otros roles.
-
-### 3.3. Estados y Estructuras de Datos
-
-#### Enumeraciones
+Esta estructura almacena la información asociada a cada netbook (token NFT):
 
 ```solidity
-enum ApprovalState { Pending, Approved, Rejected, Canceled }
-
-enum NetbookState { FABRICADA, HW_APROBADO, SW_VALIDADO, DISTRIBUIDA }
+struct TokenMetadata {
+    string serialNumber;
+    string manufacturer;
+    string technicalSpecs;
+    string batchId;
+    string hardwareAuditReportHash;
+    string softwareValidationReportHash;
+    string distributionCertificateHash;
+    bytes32 schoolHash;
+    bytes32 studentIdHash;
+}
 ```
 
-Dos máquinas de estados:
-- **`ApprovalState`**: Gestiona el estado de las solicitudes de rol.
-- **`NetbookState`**: Representa el ciclo de vida de la netbook.
+### TokenState (Enum)
 
-#### Estructuras
+Representa los estados del ciclo de vida de una netbook:
 
-- **`RoleApproval`**: Maneja el estado de aprobación de un rol para una dirección.
-  ```solidity
-  struct RoleApproval {
-      bytes32 role;
-      address account;
-      ApprovalState state;
-      uint256 approvalTimestamp;
-      address approvedBy;
-  }
-  ```
+```solidity
+enum TokenState {
+    INITIALIZED,    // Token creado pero sin auditoría
+    IN_CIRCULATION, // Netbook en proceso de verificación
+    VERIFIED,       // Verificación completa
+    DISTRIBUTED,    // Entregada a beneficiario
+    DISCONTINUED,   // Fuera de uso
+    STOLEN,         // Reportada como robada
+    BLOCKED         // Bloqueada para transferencias
+}
+```
 
-- **`Netbook`**: Almacena toda la información de una netbook.
-  ```solidity
-  struct Netbook {
-      string serialNumber;
-      string batchId;
-      string initialModelSpecs;
-      // Hardware
-      address hwAuditor;
-      bool hwIntegrityPassed;
-      bytes32 hwReportHash;
-      // Software
-      address swTechnician;
-      string osVersion;
-      bool swValidationPassed;
-      // Distribución
-      bytes32 destinationSchoolHash;
-      bytes32 studentIdHash;
-      uint256 distributionTimestamp;
-      // Estado
-      NetbookState state;
-  }
-  ```
+### VerificationRecord
 
-- **`PendingRequest`**: Estructura auxiliar para manejar eficientemente las solicitudes pendientes en un array.
+Almacena el historial de verificación de cada token:
 
-### 3.4. Mappings y Almacenamiento
+```solidity
+struct VerificationRecord {
+    address verifier;
+    TokenState previousState;
+    TokenState newState;
+    uint256 timestamp;
+    string certificateHash;
+}
+```
 
-- `mapping(string => Netbook) private netbooks;`
-  Mapea un número de serie (string) a su estructura `Netbook`.
+### RoleApproval y RoleState (para gestión de roles)
 
-- `mapping(bytes32 => mapping(address => RoleApproval)) public roleApprovals;`
-  Mapea `role => account => RoleApproval` para consultar el estado de aprobación de un rol.
+```solidity
+enum RoleState {
+    Pending,
+    Approved,
+    Rejected,
+    Canceled
+}
 
-- `mapping(bytes32 => mapping(address => uint256)) public pendingRequestIndex;`
-  Índice para el array `pendingRequests`, permitiendo búsqueda O(1) del índice en el array.
+struct RoleApproval {
+    RoleState state;
+    address account;
+    bytes32 role;
+    address approvedBy;
+    uint256 approvalTimestamp;
+}
+```
 
-- `PendingRequest[] public pendingRequests;`
-  Array para iterar eficientemente sobre solicitudes pendientes.
+## Mapeos Principales
 
-### 3.5. Eventos
+```solidity
+// Metadatos y estado de los tokens
+dmapping(uint256 => TokenMetadata) public tokenMetadata;
+dmapping(uint256 => TokenState) public tokenState;
+dmapping(uint256 => VerificationRecord[]) public verificationHistory;
+dmapping(string => uint256) public serialNumberToTokenId;
 
-El contrato emite eventos para rastrear cambios:
+// Gestión de roles
+dmapping(bytes32 => mapping(address => bool)) private _roleApprovals;
+dmapping(bytes32 => mapping(address => RoleApproval)) private _roleStatus;
+dRoleApproval[] private _pendingRoleRequests;
+```
 
-- `event NetbookRegistered(...)`: Cuando se registra una nueva netbook.
-- `event HardwareAudited(...)`: Al auditar hardware.
-- `event SoftwareValidated(...)`: Al validar software.
-- `event AssignedToStudent(...)`: Al asignar la netbook a un estudiante.
-- `event RoleStatusUpdated(...)`: Al cambiar el estado de una solicitud de rol.
+## Roles del Sistema
 
-### 3.6. Modificadores
+El contrato implementa un sistema jerárquico de roles basado en AccessControl:
 
-- `netbookStateIs(...)`: Verifica que la netbook esté en el `NetbookState` correcto antes de permitir una operación.
-- `onlyApprovedRole(...)`: Asegura que el `msg.sender` tenga el rol especificado y su estado sea "Aprobado".
+```solidity
+bytes32 public constant FABRICANTE_ROLE = keccak256("FABRICANTE_ROLE");
+bytes32 public constant AUDITOR_HW_ROLE = keccak256("AUDITOR_HW_ROLE");
+bytes32 public constant TECNICO_SW_ROLE = keccak256("TECNICO_SW_ROLE");
+bytes32 public constant ESCUELA_ROLE = keccak256("ESCUELA_ROLE");
+```
 
-### 3.7. Funciones del Contrato
+Además, hereda el `DEFAULT_ADMIN_ROLE` de AccessControl para administración superior.
 
-#### i. Gestión de Roles
+## Funciones Principales
 
-Estas funciones permiten solicitar, aprobar y revocar roles:
+### Gestión de Roles
 
-| Función | Modificador | Descripción |
-|---|---|---|
-| `requestRoleApproval(bytes32 role)` | `external` | Permite al usuario solicitar la aprobación de un rol. |
-| `approveRole(bytes32 role, address account)` | `onlyRole(DEFAULT_ADMIN_ROLE)` | Aprueba una solicitud de rol, añade el rol con `grantRole` y lo elimina de pendientes. |
-| `rejectRole(bytes32 role, address account)` | `onlyRole(DEFAULT_ADMIN_ROLE)` | Rechaza una solicitud de rol. |
-| `cancelRoleRequest(bytes32 role)` | `external` | Permite al solicitante cancelar su propia solicitud. |
-| `revokeRoleApproval(bytes32 role, address account)` | `onlyRole(DEFAULT_ADMIN_ROLE)` | Revoca un rol ya aprobado (equivalente a `renounceRole` pero para cualquier cuenta). |
-| `getRoleStatus(...)` | `external view` | Obtiene el estado de aprobación de un rol para una cuenta. |
-| `getAllPendingRoleRequests()` | `external view` | Devuelve todas las solicitudes pendientes para iterar en el frontend. |
+El contrato implementa un flujo de solicitud y aprobación de roles:
 
-#### ii. Ciclo de Vida de la Netbook
+- `requestRoleApproval(bytes32 role)`: Permite a un usuario solicitar un rol
+- `approveRole(bytes32 role, address account)`: Aprobar un rol (solo administradores)
+- `rejectRole(bytes32 role, address account)`: Rechazar una solicitud de rol
+- `revokeRoleApproval(bytes32 role, address account)`: Revocar un rol aprobado
+- `cancelRoleRequest(bytes32 role)`: Cancelar una solicitud propia
+- `getRoleStatus(bytes32 role, address account)`: Consultar el estado de un rol
+- `getAllPendingRoleRequests()`: Obtener todas las solicitudes pendientes
 
-Funciones para avanzar las netbooks a través de sus estados:
+### Registro y Trazabilidad de Netbooks
 
-| Función | Modificador | Descripción |
-|---|---|---|
-| `registerNetbooks(...)` | `onlyApprovedRole(FABRICANTE_ROLE)` | Registra múltiples netbooks en estado `FABRICADA`. Valida que los arrays tengan la misma longitud y que el número de serie no esté usado. |
-| `auditHardware(...)` | `onlyApprovedRole(AUDITOR_HW_ROLE) netbookStateIs(..., FABRICADA)` | Registra el resultado de la verificación de hardware. Cambia el estado a `HW_APROBADO`. |
-| `validateSoftware(...)` | `onlyApprovedRole(TECNICO_SW_ROLE) netbookStateIs(..., HW_APROBADO)` | Registra la validación del software. Cambia el estado a `SW_VALIDADO`. |
-| `assignToStudent(...)` | `onlyApprovedRole(ESCUELA_ROLE) netbookStateIs(..., SW_VALIDADO)` | Asigna la netbook a un estudiante. Cambia el estado a `DISTRIBUIDA`. |
-| `getNetbookReport(...)` | `external view` | Obtiene el reporte completo de una netbook por su número de serie. |
+- `registerNetbooks(string[] serialNumbers, string[] batchIds, string[] specs)`: Registra múltiples netbooks (solo FABRICANTE_ROLE)
+- `auditHardware(string serialNumber, bytes32 reportHash)`: Auditoría de hardware (solo AUDITOR_HW_ROLE)
+- `validateSoftware(string serialNumber, string memory osVersion)`: Validación de software (solo TECNICO_SW_ROLE)
+- `assignToStudent(string serialNumber, bytes32 schoolHash, bytes32 studentHash)`: Asignación a estudiante (solo ESCUELA_ROLE)
+- `getSupplyChainReport(uint256 tokenId)`: Obtiene un reporte completo de la trazabilidad
 
-## 4. Coherencia con ABI
+## Eventos
 
-El archivo ABI `SupplyChainTrackerABI.json` en `web/src/contracts/` contiene la definición completa de todas
+El contrato emite eventos para rastrear cambios importantes:
+
+```solidity
+// Eventos de roles
+event RoleRequested(bytes32 indexed role, address indexed account);
+event RoleApproved(bytes32 indexed role, address indexed account, address indexed approvedBy);
+event RoleRejected(bytes32 indexed role, address indexed account, address indexed rejectedBy);
+event RoleRequestCanceled(bytes32 indexed role, address indexed account);
+
+// Eventos de trazabilidad
+event TokenMinted(uint256 tokenId, string serialNumber, string manufacturer);
+event VerificationUpdated(uint256 indexed tokenId, TokenState previousState, TokenState newState, string certificateHash);
+event DistributionRecorded(uint256 tokenId, bytes32 schoolHash, bytes32 studentIdHash, uint256 timestamp);
+```
+
+## Interfaz IERC721SupplyChain
+
+El contrato implementa la interfaz personalizada `IERC721SupplyChain` que extiende `IERC721Enumerable` y define las siguientes funciones de consulta:
+
+```solidity
+interface IERC721SupplyChain is IERC721Enumerable {
+    function getTokenSerialNumber(uint256 tokenId) external view returns (string memory);
+    function getTokenBatchId(uint256 tokenId) external view returns (string memory);
+    function getTokenSpecs(uint256 tokenId) external view returns (string memory);
+    function getTokenState(uint256 tokenId) external view returns (uint8);
+    function getTokenStateLabel(uint256 tokenId) external view returns (string memory);
+    function getHardwareAuditData(uint256 tokenId) external view returns (address, bytes32, bool);
+    function getSoftwareValidationData(uint256 tokenId) external view returns (address, string memory, bool);
+    function getDistributionData(uint256 tokenId) external view returns (bytes32, bytes32, uint256);
+    function getSupplyChainReport(uint256 tokenId) external view returns (Netbook memory);
+}
+```
+
+## Estado Actual del Contrato
+
+El contrato ha sido modificado con relaciones de roles y apropiación, según el git status. Las principales características de implementación incluyen:
+
+- Gestión de roles con flujos de aprobación
+- Sistema de trazabilidad por NFT con múltiples estados
+- Validaciones de acceso mediante modificadores personalizados
+- Uso de hashes criptográficos para verificación de reportes
+- Implementación completa de la interfaz ERC721 con extensiones
+- Mecanismos de seguridad incluyendo noReentrancy y validaciones exhaustivas
+
+## Observaciones de Implementación
+
+1. El contrato utiliza `unicode` en mensajes de error para soporte de caracteres internacionales
+2. Se implementa un mecanismo de conteo automático de tokenIds con `_tokenIdCounter`
+3. Las funciones de auditoría y validación son no reentrantes
+4. El sistema maneja tanto direcciones como hashes criptográficos para garantizar privacidad
+5. La función `getRoleStatus` retorna información completa de estado de rol incluyendo timestamps y aprobadores
+6. El contrato permite solicitud múltiple de roles, pero con verificación

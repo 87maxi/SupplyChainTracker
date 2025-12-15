@@ -7,13 +7,101 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC721SupplyChain} from "./interfaces/IERC721SupplyChain.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @title SupplyChainTracker - Sistema de Rastreo de Netbooks mediante NFTs
 /// @author Continue
 /// @notice Sistema completo de trazabilidad para netbooks del Plan de Inclusión Digital
 /// Cada netbook es representada como un NFT (nToken) con seguimiento del ciclo de vida
 contract SupplyChainTracker is ERC721Enumerable, AccessControl, ReentrancyGuard, IERC721SupplyChain {
+    // Counter for generating sequential token IDs
+    uint256 private _tokenIdCounter;
+    
+    // Constructor que inicializa el nombre y símbolo del token NFT
+    constructor() ERC721("SecureNetbookToken", "SNBK") {
+        // Grant default admin role to deployer
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _tokenIdCounter = 1;
+    }
+
+    ///
+    /// Implementación de IERC721SupplyChain
+    ///
+    // Convertir número de serie a ID de token
+    function getNetbookId(string memory serialNumber) public view returns (uint256) {
+        uint256 tokenId = serialNumberToTokenId[serialNumber];
+        require(tokenId > 0, unicode"Netbook no existe");
+        return tokenId;
+    }
+    
+    // Obtener estado del netbook por número de serie
+    function getNetbookState(string memory serialNumber) public view returns (uint8) {
+        uint256 tokenId = getNetbookId(serialNumber);
+        return uint8(tokenState[tokenId]);
+    }
+    
+    function getNetbookReport(string memory serialNumber) public view returns (Netbook memory) {
+        uint256 tokenId = getNetbookId(serialNumber);
+        return this.getSupplyChainReport(tokenId);
+    }
+
+    ///
+    /// Token Minting
+    ///
+    function registerNetbooks(
+        string[] memory serialNumbers,
+        string[] memory batchIds,
+        string[] memory technicalSpecs
+    ) public onlyRole(FABRICANTE_ROLE) {
+        require(serialNumbers.length > 0, unicode"Debe proporcionar al menos una netbook");
+        require(
+            serialNumbers.length == batchIds.length && 
+            serialNumbers.length == technicalSpecs.length,
+            unicode"Los arreglos deben tener la misma longitud"
+        );
+
+        for (uint256 i = 0; i < serialNumbers.length; i++) {
+            registerSingleNetbook(serialNumbers[i], batchIds[i], technicalSpecs[i]);
+        }
+    }
+
+    function registerSingleNetbook(
+        string memory serialNumber,
+        string memory batchId,
+        string memory technicalSpecs
+    ) private {
+        // Verificar que el número de serie no exista
+        require(serialNumberToTokenId[serialNumber] == 0, unicode"Netbook ya registrada");
+
+        // Obtener el nuevo ID de token
+        uint256 tokenId = _tokenIdCounter;
+        _tokenIdCounter++;
+
+        // Crear metadata
+        tokenMetadata[tokenId] = TokenMetadata({
+            serialNumber: serialNumber,
+            manufacturer: "",
+            technicalSpecs: technicalSpecs,
+            batchId: batchId,
+            hardwareAuditReportHash: "",
+            softwareValidationReportHash: "",
+            distributionCertificateHash: "",
+            schoolHash: bytes32(0),
+            studentIdHash: bytes32(0)
+        });
+
+        // Registrar el número de serie al ID de token
+        serialNumberToTokenId[serialNumber] = tokenId;
+        
+        // Inicializar estado
+        tokenState[tokenId] = TokenState.INITIALIZED;
+
+        // Acuñar el NFT al fabricante
+        _safeMint(msg.sender, tokenId);
+
+        // Registrar evento
+        emit TokenMinted(tokenId, serialNumber, "");
+    }
+
     ///
     /// Sobrescribe supportsInterface para combinar AccessControl y ERC721Enumerable
     ///
@@ -54,10 +142,10 @@ contract SupplyChainTracker is ERC721Enumerable, AccessControl, ReentrancyGuard,
     /// Historial de eventos de verificación
     ///
     struct VerificationRecord {
-        address verifier;
-        TokenState previousState;
-        TokenState newState;
-        uint256 timestamp;
+                 address verifier;
+         TokenState previousState;
+         TokenState newState;
+         uint256 timestamp;
         string certificateHash;
     }
 
@@ -77,6 +165,12 @@ contract SupplyChainTracker is ERC721Enumerable, AccessControl, ReentrancyGuard,
     bytes32 public constant TECNICO_SW_ROLE = keccak256("TECNICO_SW_ROLE");
     bytes32 public constant ESCUELA_ROLE = keccak256("ESCUELA_ROLE");
     
+    ///
+    /// Estructuras y mapeos para gestión de roles
+    ///
+    ///
+    /// Estado de aprobación de rol
+    ///
     enum RoleState {
         Pending,
         Approved,
@@ -84,483 +178,206 @@ contract SupplyChainTracker is ERC721Enumerable, AccessControl, ReentrancyGuard,
         Canceled
     }
     
+    ///
+    /// Estructura para seguimiento de aprobación de roles
+    ///
     struct RoleApproval {
-        RoleState state;
-        address account;
         bytes32 role;
-        address approvedBy;
+        address account;
+        uint8 state;
+        uint256 requestTimestamp;
         uint256 approvalTimestamp;
+        address approvedBy;
     }
     
-    ///
-    /// Mapeos de roles y aprobaciones
-    ///
-    mapping(bytes32 => mapping(address => bool)) private _roleApprovals;
-    mapping(bytes32 => mapping(address => RoleApproval)) private _roleStatus;
-    RoleApproval[] private _pendingRoleRequests;
+    mapping(bytes32 => mapping(address => RoleApproval)) public roleRequests;
+    mapping(bytes32 => RoleApproval[]) public roleApprovals;
+    mapping(bytes32 => address[]) public roleAddresses;
     
     ///
-    /// Eventos de roles
+    /// Eventos para gestión de roles
     ///
-    event RoleRequested(bytes32 indexed role, address indexed account);
-    event RoleApproved(bytes32 indexed role, address indexed account, address indexed approvedBy);
-    event RoleRejected(bytes32 indexed role, address indexed account, address indexed rejectedBy);
+    event RoleRequested(bytes32 indexed role, address indexed account, uint256 timestamp);
+    event RoleApproved(bytes32 indexed role, address indexed account, address indexed approvedBy, uint256 timestamp);
+    event RoleRejected(bytes32 indexed role, address indexed account, address indexed rejectedBy, uint256 timestamp);
+    event RoleRequestCanceled(bytes32 indexed role, address indexed account, uint256 timestamp);
 
-    event RoleRequestCanceled(bytes32 indexed role, address indexed account);
-    
     ///
     /// Evento para revocación de roles
     ///
     // event RoleRevoked(bytes32 indexed role, address indexed account, address indexed revokedBy)
     // Usando evento de OpenZeppelin AccessControl
 
-    ///
+        ///
     /// Eventos de trazabilidad
     ///
     event TokenMinted(uint256 tokenId, string serialNumber, string manufacturer);
     event VerificationUpdated(uint256 indexed tokenId, TokenState previousState, TokenState newState, string certificateHash);
-    event VerificationRoleRegistered(address verifier, uint8 verificationType);
+
     event DistributionRecorded(uint256 tokenId, bytes32 schoolHash, bytes32 studentIdHash, uint256 timestamp);
     event HardwareVerificationAdded(uint256 index, address verifier, string reportHash, bool passed);
     event TokenStateUpdated(uint256 tokenId, TokenState newState);
 
+    function requestRoleApproval(bytes32 role) public {
+        // No se puede solicitar el rol de administrador principal
+        require(role != DEFAULT_ADMIN_ROLE, unicode"No se puede solicitar el rol de administrador principal");
+        
+        // Verificar que el rol sea uno válido del sistema
+        require(
+            role == FABRICANTE_ROLE || 
+            role == AUDITOR_HW_ROLE || 
+            role == TECNICO_SW_ROLE ||
+            role == ESCUELA_ROLE,
+            unicode"Rol no válido para solicitud"
+        );
+        
+        // No se puede solicitar un rol si ya se tiene
+        require(!hasRole(role, msg.sender), unicode"Ya tienes este rol");
+        
+        // No se puede solicitar un rol si ya hay una solicitud pendiente
+        require(
+            roleRequests[role][msg.sender].requestTimestamp == 0 || 
+            roleRequests[role][msg.sender].state != uint8(RoleState.Approved),
+            unicode"Ya tienes una solicitud pendiente para este rol"
+        );
+        
+        // Registrar la solicitud
+        RoleApproval memory approval = RoleApproval({
+            role: role,
+            account: msg.sender,
+            state: uint8(RoleState.Pending),
+            requestTimestamp: block.timestamp,
+            approvalTimestamp: 0,
+            approvedBy: address(0)
+        });
+        
+        roleRequests[role][msg.sender] = approval;
+        roleApprovals[role].push(approval);
+        
+        emit RoleRequested(role, msg.sender, block.timestamp);
+    }
+    
+    function approveRole(bytes32 role, address account) public {
+        // Solo el administrador puede aprobar roles
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), unicode"Requiere rol de administrador");
+        
+        // No se puede aprobar el rol de administrador principal a través de este flujo
+        require(role != DEFAULT_ADMIN_ROLE, unicode"Use funciones de acceso directo para administradores");
+        
+        // La solicitud debe existir y estar pendiente
+        require(
+            roleRequests[role][account].requestTimestamp > 0 && 
+            roleRequests[role][account].state == uint8(RoleState.Pending),
+            unicode"No hay solicitud pendiente para este rol"
+        );
+        
+        // Conceder el rol
+        _grantRole(role, account);
+        
+        // Actualizar estado de la solicitud
+        roleRequests[role][account].state = uint8(RoleState.Approved);
+        roleRequests[role][account].approvalTimestamp = block.timestamp;
+        roleRequests[role][account].approvedBy = msg.sender;
+        
+        // Buscar y actualizar en la lista general
+        for (uint i = 0; i < roleApprovals[role].length; i++) {
+            if (roleApprovals[role][i].account == account && roleApprovals[role][i].role == role) {
+                roleApprovals[role][i].state = uint8(RoleState.Approved);
+                roleApprovals[role][i].approvalTimestamp = block.timestamp;
+                roleApprovals[role][i].approvedBy = msg.sender;
+                break;
+            }
+        }
+        
+        emit RoleApproved(role, account, msg.sender, block.timestamp);
+    }
+    
+    function rejectRole(bytes32 role, address account) public {
+        // Solo el administrador puede rechazar solicitudes
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), unicode"Requiere rol de administrador");
+        
+        // La solicitud debe existir y estar pendiente
+        require(
+            roleRequests[role][account].requestTimestamp > 0 && 
+            roleRequests[role][account].state == uint8(RoleState.Pending),
+            unicode"No hay solicitud pendiente para este rol"
+        );
+        
+        // Actualizar estado de la solicitud
+        roleRequests[role][account].state = uint8(RoleState.Rejected);
+        roleRequests[role][account].approvalTimestamp = block.timestamp;
+        roleRequests[role][account].approvedBy = msg.sender;
+        
+        // Buscar y actualizar en la lista general
+        for (uint i = 0; i < roleApprovals[role].length; i++) {
+            if (roleApprovals[role][i].account == account && roleApprovals[role][i].role == role) {
+                roleApprovals[role][i].state = uint8(RoleState.Rejected);
+                roleApprovals[role][i].approvalTimestamp = block.timestamp;
+                roleApprovals[role][i].approvedBy = msg.sender;
+                break;
+            }
+        }
+        
+        emit RoleRejected(role, account, msg.sender, block.timestamp);
+    }
+    
+    function cancelRoleRequest(bytes32 role) public {
+        // La solicitud debe existir para esta cuenta
+        require(roleRequests[role][msg.sender].requestTimestamp > 0, unicode"No hay solicitud para este rol");
+        
+        // Solo solicitudes pendientes pueden cancelarse
+        require(roleRequests[role][msg.sender].state == uint8(RoleState.Pending), unicode"Solo solicitudes pendientes pueden cancelarse");
+        
+        // Actualizar estado de la solicitud
+        roleRequests[role][msg.sender].state = uint8(RoleState.Canceled);
+        
+        // Buscar y actualizar en la lista general
+        for (uint i = 0; i < roleApprovals[role].length; i++) {
+            if (roleApprovals[role][i].account == msg.sender && roleApprovals[role][i].role == role) {
+                roleApprovals[role][i].state = uint8(RoleState.Canceled);
+                break;
+            }
+        }
+        
+        emit RoleRequestCanceled(role, msg.sender, block.timestamp);
+    }
+    
+    // Getter function to get role requests for a specific role (for admin interfaces)
+    function getRoleRequests(bytes32 role) public view returns (RoleApproval[] memory) {
+        return roleApprovals[role];
+    }
+    
+    // Getter function for a specific user's role request
+    function getUserRoleRequest(bytes32 role, address user) public view returns (RoleApproval memory) {
+        return roleRequests[role][user];
+    }
+    
+    // Getter function to get role status for a specific user (with backward compatibility)
+    function getRoleStatus(bytes32 role, address account) public view returns (RoleApproval memory) {
+        return roleRequests[role][account];
+    }
+
     ///
-    /// Implementación de la interfaz IERC721SupplyChain
+    /// Implementación de IERC721SupplyChain
     ///
-    function getTokenSerialNumber(uint256 tokenId) external view returns (string memory) {
+    function getTokenSerialNumber(uint256 tokenId) external view override returns (string memory) {
+        require(_exists(tokenId), unicode"Token no existe");
+        require(msg.sender == ownerOf(tokenId) || getApproved(tokenId) == msg.sender || isApprovedForAll(ownerOf(tokenId), msg.sender), unicode"No autorizado");
         return tokenMetadata[tokenId].serialNumber;
     }
-    
-    function getTokenBatchId(uint256 tokenId) external view returns (string memory) {
+
+    function getTokenBatchId(uint256 tokenId) external view override returns (string memory) {
+        require(_exists(tokenId), unicode"Token no existe");
+        require(msg.sender == ownerOf(tokenId) || getApproved(tokenId) == msg.sender || isApprovedForAll(ownerOf(tokenId), msg.sender), unicode"No autorizado");
         return tokenMetadata[tokenId].batchId;
     }
-    
-    function getTokenSpecs(uint256 tokenId) external view returns (string memory) {
+
+    function getTokenSpecs(uint256 tokenId) external view override returns (string memory) {
+        require(_exists(tokenId), unicode"Token no existe");
+        require(msg.sender == ownerOf(tokenId) || getApproved(tokenId) == msg.sender || isApprovedForAll(ownerOf(tokenId), msg.sender), unicode"No autorizado");
         return tokenMetadata[tokenId].technicalSpecs;
     }
-    
-    function getTokenState(uint256 tokenId) external view returns (uint8) {
-        return uint8(tokenState[tokenId]);
-    }
-    
-    function getTokenStateLabel(uint256 tokenId) external view returns (string memory) {
-        TokenState state = tokenState[tokenId];
-        if (state == TokenState.INITIALIZED) return unicode"Registrada";
-        if (state == TokenState.IN_CIRCULATION) return unicode"En Verificación";
-        if (state == TokenState.VERIFIED) return unicode"Verificada";
-        if (state == TokenState.DISTRIBUTED) return unicode"Distribuida";
-        if (state == TokenState.DISCONTINUED) return unicode"Fuera de Servicio";
-        if (state == TokenState.STOLEN) return unicode"Reportada como Robada";
-        if (state == TokenState.BLOCKED) return unicode"Bloqueada";
-        return "Desconocido";
-    }
-    
-   function getHardwareAuditData(uint256 tokenId) 
-        external view 
-        returns (address auditor, bytes32 reportHash, bool passed)
-    {
-        for (uint256 i = 0; i < verificationHistory[tokenId].length; i++) {
-            if (verificationHistory[tokenId][i].newState == TokenState.IN_CIRCULATION) {
-                return (
-                    verificationHistory[tokenId][i].verifier,
-                    bytes32(bytes(tokenMetadata[tokenId].hardwareAuditReportHash)),
-                    true
-                );
-            }
-        }
-        return (address(0), bytes32(0), false);
-    }
-    
-    function getSoftwareValidationData(uint256 tokenId) 
-        external view 
-        returns (address technician, string memory osVersion, bool passed)
-    {
-        for (uint256 i = 0; i < verificationHistory[tokenId].length; i++) {
-            if (verificationHistory[tokenId][i].newState == TokenState.VERIFIED) {
-                return (
-                    verificationHistory[tokenId][i].verifier,
-                    tokenMetadata[tokenId].softwareValidationReportHash,
-                    true
-                );
-            }
-        }
-        return (address(0), "", false);
-    }
-    
-    function getDistributionData(uint256 tokenId) 
-        external view 
-        returns (bytes32 schoolHash, bytes32 studentHash, uint256 timestamp)
-    {
-        require(ownerOf(tokenId) != address(0), "Token no existe");
-        
-        for (uint256 i = 0; i < verificationHistory[tokenId].length; i++) {
-            if (verificationHistory[tokenId][i].newState == TokenState.DISTRIBUTED) {
-                return (
-                    tokenMetadata[tokenId].schoolHash,
-                    tokenMetadata[tokenId].studentIdHash,
-                    verificationHistory[tokenId][i].timestamp
-                );
-            }
-        }
-        return (bytes32(0), bytes32(0), 0);
-    }
-    
-    ///
-    /// Modificador de control de acceso
-    ///
-    function _onlyVerifiedStatus(uint256 tokenId) internal view {
-        require(tokenState[tokenId] == TokenState.VERIFIED, unicode"El token debe estar verificado");
-    }
 
-    function _onlyAuthorizedVerifier(bytes32 role) internal view {
-        require(_hasApprovedRole(role, msg.sender), unicode"No autorizado para esta operación");
-    }
-
-    function _onlyApprovedRole(bytes32 role) internal view {
-        require(_hasApprovedRole(role, msg.sender), unicode"Rol no aprobado para esta dirección");
-    }
-
-    modifier onlyVerifiedStatus(uint256 tokenId) {
-        _onlyVerifiedStatus(tokenId);
-        _;
-    }
-
-    modifier onlyAuthorizedVerifier(bytes32 role) {
-        _onlyAuthorizedVerifier(role);
-        _;
-    }
-
-    modifier onlyApprovedRole(bytes32 role) {
-        _onlyApprovedRole(role);
-        _;
-    }
-    
-    ///
-    /// Funciones públicas para consultas
-    ///
-    function getNetbookState(string memory serialNumber) public view returns (uint8) {
-        uint256 tokenId = serialNumberToTokenId[serialNumber];
-        require(tokenId != 0, unicode"Netbook no existe");
-        return uint8(tokenState[tokenId]);
-    }
-
-    ///
-    /// Constructor
-    ///
-    uint256 private _tokenIdCounter;
-    constructor() ERC721("SecureNetbookToken", "SNBK") {
-        _tokenIdCounter = 1;
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-    }
-
-    ///
-    /// Registra múltiples netbooks
-    ///
-    function registerNetbooks(
-        string[] memory serialNumbers,
-        string[] memory batchIds,
-        string[] memory specs
-    ) public onlyApprovedRole(FABRICANTE_ROLE) {
-        require(serialNumbers.length == batchIds.length && batchIds.length == specs.length, unicode"Longitud de arrays no coincide");
-        
-        for (uint256 i = 0; i < serialNumbers.length; i++) {
-            require(serialNumberToTokenId[serialNumbers[i]] == 0, unicode"Netbook ya registrada");
-            
-            uint256 tokenId = _tokenIdCounter;
-            _tokenIdCounter++;
-            
-            tokenMetadata[tokenId] = TokenMetadata({
-                serialNumber: serialNumbers[i],
-                manufacturer: "Manufacturer",
-                technicalSpecs: specs[i],
-                batchId: batchIds[i],
-                hardwareAuditReportHash: "",
-                softwareValidationReportHash: "",
-                distributionCertificateHash: "",
-                schoolHash: bytes32(0),
-                studentIdHash: bytes32(0)
-            });
-            
-            tokenState[tokenId] = TokenState.INITIALIZED;
-            serialNumberToTokenId[serialNumbers[i]] = tokenId;
-            
-            _safeMint(msg.sender, tokenId);
-            emit TokenMinted(tokenId, serialNumbers[i], "Manufacturer");
-        }
-    }
-    
-    ///
-    /// Obtiene el reporte de una netbook
-    ///
-    function getNetbookReport(string memory serialNumber) public view returns (IERC721SupplyChain.Netbook memory) {
-        uint256 tokenId = serialNumberToTokenId[serialNumber];
-        require(tokenId != 0, unicode"Netbook no existe");
-        return this.getSupplyChainReport(tokenId);
-    }
-    
-    ///
-    /// Obtiene el reporte de una netbook por tokenId
-    ///
-    function getNetbookReportByTokenId(uint256 tokenId) public view returns (IERC721SupplyChain.Netbook memory) {
-        require(ownerOf(tokenId) != address(0), unicode"Token no existe");
-        return this.getSupplyChainReport(tokenId);
-    }
-
-    ///
-    /// Solicita la aprobación de un rol
-    ///
-    function requestRoleApproval(bytes32 role) public {
-        require(!_roleApprovals[role][msg.sender], unicode"Rol ya aprobado para esta dirección");
-        
-        _roleStatus[role][msg.sender] = RoleApproval({
-            state: RoleState.Pending,
-            account: msg.sender,
-            role: role,
-            approvedBy: address(0),
-            approvalTimestamp: block.timestamp
-        });
-        
-        _pendingRoleRequests.push(_roleStatus[role][msg.sender]);
-        emit RoleRequested(role, msg.sender);
-    }
-    
-    ///
-    /// Aprueba un rol para una dirección
-    ///
-    function approveRole(bytes32 role, address account) public onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
-        require(_roleStatus[role][account].state == RoleState.Pending, unicode"Rol no está pendiente");
-
-        _roleApprovals[role][account] = true;
-        _roleStatus[role][account].state = RoleState.Approved;
-        _roleStatus[role][account].approvedBy = msg.sender;
-        _roleStatus[role][account].approvalTimestamp = block.timestamp;
-
-        emit RoleApproved(role, account, msg.sender);
-        _removePendingRequest(role, account);
-    }
-    
-    ///
-    /// Rechaza un rol para una dirección
-    ///
-    function rejectRole(bytes32 role, address account) public onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
-        require(_roleStatus[role][account].state == RoleState.Pending, unicode"Rol no está pendiente");
-
-        _roleStatus[role][account].state = RoleState.Rejected;
-        _roleStatus[role][account].approvedBy = msg.sender;
-        _roleStatus[role][account].approvalTimestamp = block.timestamp;
-
-        emit RoleRejected(role, account, msg.sender);
-        _removePendingRequest(role, account);
-    }
-    
-    ///
-    /// Revoca un rol aprobado
-    ///
-    function revokeRoleApproval(bytes32 role, address account) public onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
-        require(_roleApprovals[role][account], unicode"Rol no está aprobado");
-        require(_roleStatus[role][account].state == RoleState.Approved, unicode"El rol no está en estado aprobado para revocación");
-
-        _roleApprovals[role][account] = false;
-        _roleStatus[role][account].state = RoleState.Canceled;
-        _roleStatus[role][account].approvedBy = msg.sender;
-        _roleStatus[role][account].approvalTimestamp = block.timestamp;
-
-        _revokeRole(role, account);
-        _removePendingRequest(role, account);
-    }
-    
-    ///
-    /// Cancela una solicitud de rol
-    ///
-    function cancelRoleRequest(bytes32 role) public {
-        require(_roleStatus[role][msg.sender].state == RoleState.Pending, unicode"Rol no está pendiente");
-        
-        _roleStatus[role][msg.sender].state = RoleState.Canceled;
-        _roleStatus[role][msg.sender].approvedBy = msg.sender;
-        _roleStatus[role][msg.sender].approvalTimestamp = block.timestamp;
-        
-        emit RoleRequestCanceled(role, msg.sender);
-        _removePendingRequest(role, msg.sender);
-    }
-    
-    ///
-    /// Obtiene el estado de un rol para una dirección
-    ///
-    function getRoleStatus(bytes32 role, address account) public view returns (RoleApproval memory) {
-        return _roleStatus[role][account];
-    }
-    
-    ///
-    /// Obtiene todas las solicitudes de rol pendientes
-    ///
-    function getAllPendingRoleRequests() public view returns (RoleApproval[] memory) {
-        return _pendingRoleRequests;
-    }
-    
-    ///
-    /// Elimina una solicitud pendiente de la lista
-    ///
-    function _removePendingRequest(bytes32 role, address account) private {
-        for (uint256 i = 0; i < _pendingRoleRequests.length; i++) {
-            if (_pendingRoleRequests[i].role == role && _pendingRoleRequests[i].account == account) {
-                _pendingRoleRequests[i] = _pendingRoleRequests[_pendingRoleRequests.length - 1];
-                _pendingRoleRequests.pop();
-                break;
-            }
-        }
-    }
-    
-    ///
-    /// Verifica si una dirección tiene un rol aprobado
-    ///
-    function _hasApprovedRole(bytes32 role, address account) internal view returns (bool) {
-        return _roleApprovals[role][account];
-    }
-
-        ///
-    /// Agrega verificación de hardware
-    ///
-    function auditHardware(string memory serialNumber, bytes32 reportHash) public onlyAuthorizedVerifier(AUDITOR_HW_ROLE) nonReentrant {
-        uint256 tokenId = serialNumberToTokenId[serialNumber];
-        require(tokenId != 0, unicode"Netbook no existe");
-        require(tokenState[tokenId] == TokenState.INITIALIZED, unicode"Estado incorrecto para auditoría de hardware");
-        // Comentar o eliminar la validación del reporte no cero para permitir pruebas con bytes32(0)
-        // require(reportHash != bytes32(0), unicode"Hash del reporte no puede ser cero");
-
-        TokenMetadata storage metadata = tokenMetadata[tokenId];
-        metadata.hardwareAuditReportHash = Strings.toHexString(uint256(reportHash), 32);
-        
-        TokenState previousState = tokenState[tokenId];
-        tokenState[tokenId] = TokenState.IN_CIRCULATION;
-        
-        // Emitir evento con el hash en formato hexadecimal
-        emit VerificationUpdated(tokenId, previousState, TokenState.IN_CIRCULATION, Strings.toHexString(uint256(reportHash), 32));
-
-        verificationHistory[tokenId].push(VerificationRecord({
-            verifier: msg.sender,
-            previousState: previousState,
-            newState: TokenState.IN_CIRCULATION,
-            timestamp: block.timestamp,
-            certificateHash: Strings.toHexString(uint256(reportHash), 32)
-        }));
-
-        emit VerificationUpdated(tokenId, previousState, TokenState.IN_CIRCULATION, Strings.toHexString(uint256(reportHash), 32));
-    }
-
-    ///
-    /// Agrega verificación de software
-    ///
-    function validateSoftware(string memory serialNumber, string memory osVersion) public onlyAuthorizedVerifier(TECNICO_SW_ROLE) nonReentrant {
-        uint256 tokenId = serialNumberToTokenId[serialNumber];
-        require(tokenId != 0, unicode"Netbook no existe");
-        require(tokenState[tokenId] == TokenState.IN_CIRCULATION, unicode"Estado incorrecto para validación de software");
-        require(bytes(osVersion).length > 0, unicode"Versión del sistema operativo no puede ser vacía");
-
-        TokenMetadata storage metadata = tokenMetadata[tokenId];
-        metadata.softwareValidationReportHash = osVersion;
-
-        TokenState previousState = tokenState[tokenId];
-        tokenState[tokenId] = TokenState.VERIFIED;
-
-        verificationHistory[tokenId].push(VerificationRecord({
-            verifier: msg.sender,
-            previousState: previousState,
-            newState: TokenState.VERIFIED,
-            timestamp: block.timestamp,
-            certificateHash: osVersion
-        }));
-
-        emit VerificationUpdated(tokenId, previousState, TokenState.VERIFIED, osVersion);
-    }
-
-    ///
-    /// Distribuye una netbook a un estudiante
-    ///
-    function assignToStudent(string memory serialNumber, bytes32 schoolHash, bytes32 studentHash) public onlyAuthorizedVerifier(ESCUELA_ROLE) nonReentrant {
-        uint256 tokenId = serialNumberToTokenId[serialNumber];
-        require(tokenId != 0, unicode"Netbook no existe");
-        require(tokenState[tokenId] == TokenState.VERIFIED, unicode"Estado incorrecto para distribución");
-        require(schoolHash != bytes32(0), unicode"Hash de la escuela no puede ser cero");
-        require(studentHash != bytes32(0), unicode"Hash del estudiante no puede ser cero");
-
-        TokenMetadata storage metadata = tokenMetadata[tokenId];
-        require(metadata.studentIdHash == bytes32(0), unicode"La netbook ya está asignada a un estudiante");
-        
-        metadata.schoolHash = schoolHash;
-        metadata.studentIdHash = studentHash;
-        metadata.distributionCertificateHash = string(abi.encodePacked(Strings.toHexString(uint256(schoolHash), 32), Strings.toHexString(uint256(studentHash), 32)));
-
-        TokenState previousState = tokenState[tokenId];
-        tokenState[tokenId] = TokenState.DISTRIBUTED;
-
-        verificationHistory[tokenId].push(VerificationRecord({
-            verifier: msg.sender,
-            previousState: previousState,
-            newState: TokenState.DISTRIBUTED,
-            timestamp: block.timestamp,
-            certificateHash: string(abi.encodePacked(Strings.toHexString(uint256(schoolHash), 32), Strings.toHexString(uint256(studentHash), 32)))
-        }));
-
-        emit DistributionRecorded(tokenId, schoolHash, studentHash, block.timestamp);
-    }
-
-    ///
-    /// Reporte completo de la netbook
-    ///
-    function getSupplyChainReport(uint256 tokenId) external view returns (Netbook memory) {
-        require(ownerOf(tokenId) != address(0), unicode"Token no existe");
-
-        // Obtener datos de hardware
-        address hwAuditor = address(0);
-        bytes32 hwReportHash = bytes32(0);
-        bool hwPassed = false;
-        for (uint256 i = 0; i < verificationHistory[tokenId].length; i++) {
-            if (verificationHistory[tokenId][i].newState == TokenState.IN_CIRCULATION) {
-                hwAuditor = verificationHistory[tokenId][i].verifier;
-                hwReportHash = bytes32(bytes(tokenMetadata[tokenId].hardwareAuditReportHash));
-                hwPassed = true;
-                break;
-            }
-        }
-
-        // Obtener datos de software
-        address swTechnician = address(0);
-        string memory osVersion = "";
-        bool swPassed = false;
-        for (uint256 i = 0; i < verificationHistory[tokenId].length; i++) {
-            if (verificationHistory[tokenId][i].newState == TokenState.VERIFIED) {
-                swTechnician = verificationHistory[tokenId][i].verifier;
-                osVersion = tokenMetadata[tokenId].softwareValidationReportHash;
-                swPassed = true;
-                break;
-            }
-        }
-
-        // Obtener datos de distribución
-        bytes32 schoolHash = tokenMetadata[tokenId].schoolHash;
-        bytes32 studentHash = tokenMetadata[tokenId].studentIdHash;
-        uint256 distTimestamp = 0;
-        for (uint256 i = 0; i < verificationHistory[tokenId].length; i++) {
-            if (verificationHistory[tokenId][i].newState == TokenState.DISTRIBUTED) {
-                distTimestamp = verificationHistory[tokenId][i].timestamp;
-                break;
-            }
-        }
-
-        return IERC721SupplyChain.Netbook({
-            serialNumber: tokenMetadata[tokenId].serialNumber,
-            batchId: tokenMetadata[tokenId].batchId,
-            specs: tokenMetadata[tokenId].technicalSpecs,
-            state: uint8(tokenState[tokenId]),
-            hwAuditor: hwAuditor,
-            hwReportHash: hwReportHash,
-            hwIntegrityPassed: hwPassed,
-            swTechnician: swTechnician,
-            osVersion: osVersion,
-            swValidationPassed: swPassed,
-            destinationSchoolHash: schoolHash,
-            studentIdHash: studentHash,
-            distributionTimestamp: distTimestamp
-        });
-    }
-}
+    function getTokenState(uint256 tokenId) external view override returns (uint8) {
+        require(_exists(tokenId), unicode"Token no existe");
+        require(msg.sender == ownerOf(tokenId

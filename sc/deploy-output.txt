@@ -1,0 +1,7 @@
+[0;32mIniciando deploy del contrato SupplyChainTracker...[0m
+[1;33mAnvil ya está ejecutándose en el puerto 8545[0m
+[1;33mPID de anvil: 6554
+8344[0m
+[1;33mCompilando contrato...[0m
+No files changed, compilation skipped
+[1;33mDesplegando contrato...[0m

@@ -2,6 +2,7 @@
 
 import { ethers } from 'ethers';
 import SupplyChainTrackerABI from '@/contracts/SupplyChainTrackerABI.json';
+import { toast } from 'sonner';
 
 // Define the Role constants
 export const FABRICANTE_ROLE = ethers.keccak256(ethers.toUtf8Bytes('FABRICANTE_ROLE'));
@@ -10,25 +11,43 @@ export const ESCUELA_ROLE = ethers.keccak256(ethers.toUtf8Bytes('ESCUELA_ROLE'))
 export const REPARADOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes('REPARADOR_ROLE'));
 export const AUDITOR_HW_ROLE = ethers.keccak256(ethers.toUtf8Bytes('AUDITOR_HW_ROLE'));
 export const TECNICO_SW_ROLE = ethers.keccak256(ethers.toUtf8Bytes('TECNICO_SW_ROLE'));
-export const DEFAULT_ADMIN_ROLE = '0x0000000000000000000000000000000000000000000000000000000000000000';
+
+// OpenZeppelin's AccessControl uses bytes32(0) as the DEFAULT_ADMIN_ROLE
+export const DEFAULT_ADMIN_ROLE = ethers.ZeroHash;
+
+import { CONTRACT_ERROR_MAP, handleError } from '../utils/contractErrors';
 
 export class Web3Service {
   private contract: ethers.Contract | null = null;
   private signer: ethers.Signer | null = null;
+  private provider: ethers.Provider | null = null;
+  private contractAddress: string;
 
   constructor(signer?: ethers.Signer | null) {
     console.log('Creating Web3Service instance...');
     this.signer = signer || null;
-
+    this.provider = signer?.provider || null;
+    
+    this.contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || '';
+    if (!this.contractAddress) {
+      console.error('Contract address not configured');
+      throw new Error('Contract address not configured. Please check your environment variables.');
+    }
+    
     if (this.signer) {
-      const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
-      if (contractAddress) {
+      try {
         this.contract = new ethers.Contract(
-          contractAddress,
+          this.contractAddress,
           SupplyChainTrackerABI.abi,
           this.signer
         );
+        console.log('Contract initialized successfully at:', this.contractAddress);
+      } catch (error) {
+        console.error('Failed to initialize contract:', error);
+        throw new Error('Failed to initialize contract. Please check the ABI and address.');
       }
+    } else {
+      console.warn('No signer provided to Web3Service');
     }
     console.log('Web3Service initialized');
   }
@@ -44,6 +63,10 @@ export class Web3Service {
       return result;
     } catch (error) {
       console.error('Error checking role:', error);
+      // Show user-friendly error
+      toast.error('Error de conexión', {
+        description: 'No se pudo verificar tu rol. Por favor, verifica tu conexión a la red.'
+      });
       return false;
     }
   }
@@ -55,10 +78,20 @@ export class Web3Service {
     }
 
     try {
-      const result = await this.contract.getRoleStatus(role, address);
-      return result;
+      // With the simplified role system, we just check if the address has the role
+      const hasRole = await this.contract.hasRole(role, address);
+      return {
+        state: hasRole ? 1 : 0, // 1 = Approved, 0 = Not approved
+        account: address,
+        role: role,
+        approvedBy: hasRole ? address : '0x0000000000000000000000000000000000000000',
+        approvalTimestamp: hasRole ? Date.now() : 0
+      };
     } catch (error) {
       console.error('Error getting role status:', error);
+      toast.error('Error de conexión', {
+        description: 'No se pudo obtener el estado de tu rol. Por favor, verifica tu conexión a la red.'
+      });
       throw error;
     }
   }
@@ -70,11 +103,11 @@ export class Web3Service {
 
     try {
       const tx = await this.contract.requestRoleApproval(role);
-      await tx.wait();
-      return tx.hash;
+      const receipt = await tx.wait();
+      return receipt.hash;
     } catch (error) {
       console.error('Error requesting role approval:', error);
-      throw error;
+      throw handleError(error, 'requestRoleApproval');
     }
   }
 
@@ -85,10 +118,34 @@ export class Web3Service {
     }
 
     try {
-      const result = await this.contract.getAllPendingRoleRequests();
-      return result;
+      const roleConstants = getRoleConstants();
+      const allRequests: any[] = [];
+      
+      // Get pending requests for all roles
+      for (const [roleName, role] of Object.entries(roleConstants)) {
+        if (roleName === 'DEFAULT_ADMIN_ROLE') continue;
+        
+        const requests = await this.contract.getRoleRequests(role);
+        const pendingRequests = requests.filter(
+          (req: any) => req.state === 0 // Pending state
+        );
+        
+        pendingRequests.forEach((req: any) => {
+          allRequests.push({
+            role: roleName,
+            address: req.account,
+            requestTimestamp: req.requestTimestamp,
+            state: req.state
+          });
+        });
+      }
+      
+      return allRequests;
     } catch (error) {
       console.error('Error getting pending role requests:', error);
+      toast.error('Error de conexión', {
+        description: 'No se pudo obtener las solicitudes pendientes. Por favor, verifica tu conexión a la red.'
+      });
       return [];
     }
   }
@@ -100,11 +157,41 @@ export class Web3Service {
 
     try {
       const tx = await this.contract.cancelRoleRequest(role);
-      await tx.wait();
-      return tx.hash;
+      const receipt = await tx.wait();
+      return receipt.hash;
     } catch (error) {
       console.error('Error canceling role request:', error);
-      throw error;
+      throw handleError(error, 'cancelRoleRequest');
+    }
+  }
+
+  async approveRole(role: string, account: string): Promise<string> {
+    if (!this.contract) {
+      throw new Error('Contract not initialized');
+    }
+
+    try {
+      const tx = await this.contract.approveRole(role, account);
+      const receipt = await tx.wait();
+      return receipt.hash;
+    } catch (error) {
+      console.error('Error approving role:', error);
+      throw handleError(error, 'approveRole');
+    }
+  }
+
+  async rejectRole(role: string, account: string): Promise<string> {
+    if (!this.contract) {
+      throw new Error('Contract not initialized');
+    }
+
+    try {
+      const tx = await this.contract.rejectRole(role, account);
+      const receipt = await tx.wait();
+      return receipt.hash;
+    } catch (error) {
+      console.error('Error rejecting role:', error);
+      throw handleError(error, 'rejectRole');
     }
   }
 
@@ -134,7 +221,6 @@ export class Web3Service {
     }
   }
 }
-
 
 export function getRoleConstants() {
   return {

@@ -1,0 +1,11 @@
+fix(role-management): Corrige sistema de gestión de roles
+
+- Implementa inicialización correcta del administrador en el contrato
+- Agrega gestión diferenciada para DEFAULT_ADMIN_ROLE
+- Sincroniza correctamente roles funcionales con AccessControl
+- Mejora verificación de roles en el frontend
+
+Estos cambios resuelven problemas de permisos donde los administradores
+no mantenían sus privilegios adecuadamente.
+
+Signed-off-by: Continue <noreply@continue.dev>

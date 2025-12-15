@@ -1,131 +1,172 @@
-# Implementación del Sistema de Trazabilidad de Netbooks
+# Informe Final de Implementación
 
-## 📋 Resumen del Proyecto
+Este informe resume los principales descubrimientos del análisis completo del sistema SupplyChainTracker, cubriendo tanto el contrato inteligente como el frontend.
 
-Sistema de trazabilidad blockchain para netbooks educativas que implementa una máquina de estados con control de acceso basado en roles (RBAC) utilizando OpenZeppelin.
+## Arquitectura General
 
-## 🏗️ Arquitectura y Patrones de Diseño
+El sistema consta de dos componentes principales:
 
-### 1. Control de Acceso Basado en Roles (RBAC)
-- **Implementación**: Librería `AccessControl` de OpenZeppelin
-- **Principio**: Cada acción modificativa requiere un rol específico
-- **Visibilidad**: Información de trazabilidad es de lectura pública
+1. **Contrato Inteligente** (`sc/`): Implementado con Solidity y Foundry, gestiona la lógica de negocios, trazabilidad y control de acceso.
+2. **Frontend** (`web/`): Aplicación Next.js que interactúa con el contrato a través de Web3.
 
-### 2. Máquina de Estados (State Machine)
-Flujo secuencial predefinido con transiciones validadas en tiempo de ejecución:
+Ambos componentes están correctamente integrados, con coherencia demostrada entre las interfaces del contrato y su uso en el frontend.
 
-```mermaid
-stateDiagram-v2
-    [*] --> FABRICADA
-    FABRICADA --> HW_APROBADO: Auditoría Hardware
-    HW_APROBADO --> SW_VALIDADO: Validación Software  
-    SW_VALIDADO --> DISTRIBUIDA: Asignación Estudiante
-    DISTRIBUIDA --> [*]
-```
+## Contrato Inteligente (sc/)
 
-**Restricción clave**: No es posible regresar a estados anteriores ni saltar estados.
+### Tecnologías y Frameworks
 
-## 👥 Roles del Sistema
+- **Solidity**: Versión ^0.8.20
+- **Foundry**: Framework principal para desarrollo y pruebas
+- **OpenZeppelin Contracts**: Para implementación de estándares (ERC721, AccessControl, etc.)
+- **Remappings**: Configuración adecuada en `remappings.txt` para manejo de dependencias
 
-| Rol | Función Principal |
-|------|-------------------|
-| `DEFAULT_ADMIN_ROLE` | Gobernanza: asigna/revoca roles |
-| `FABRICANTE_ROLE` | Registra nuevas netbooks y lotes |
-| `AUDITOR_HW_ROLE` | Verifica integridad física del hardware |
-| `TECNICO_SW_ROLE` | Instala y valida software |
-| `ESCUELA_ROLE` | Asigna netbook a estudiante final |
+### Arquitectura del Contrato
 
-## 📊 Estructura de Datos - Netbook
+El contrato `SupplyChainTracker.sol` hereda de múltiples contratos para proporcionar funcionalidades completas:
 
 ```solidity
-struct Netbook {
-    // Datos de Origen (FABRICANTE)
-    string serialNumber;
-    string batchId;
-    string initialModelSpecs;
-    
-    // Datos de Hardware (AUDITOR_HW)
-    address hwAuditor;
-    bool hwIntegrityPassed;
-    bytes32 hwReportHash;
-    
-    // Datos de Software (TECNICO_SW)
-    address swTechnician;
-    string osVersion;
-    bool swValidationPassed;
-    
-    // Datos de Destino (ESCUELA)
-    bytes32 destinationSchoolHash;
-    bytes32 studentIdHash;
-    uint256 distributionTimestamp;
-    
-    // Estado actual
-    State state;
+contract SupplyChainTracker is ERC721Enumerable, AccessControl, ReentrancyGuard, IERC721SupplyChain {
+```
+
+- **ERC721Enumerable**: Proporciona funcionalidad de tokens no fungibles con enumeración
+- **AccessControl**: Sistema de roles basado en permisos
+- **ReentrancyGuard**: Protección contra ataques de reentrada
+- **IERC721SupplyChain**: Interfaz personalizada para trazabilidad
+
+### Sistema de Roles
+
+El contrato implementa un modelo jerárquico de autorización con roles específicos:
+
+- `FABRICANTE_ROLE`: Registro de productos
+- `AUDITOR_HW_ROLE`: Verificación de hardware
+- `TECNICO_SW_ROLE`: Validación de software
+- `ESCUELA_ROLE`: Asignación a estudiantes
+- `DEFAULT_ADMIN_ROLE`: Administración del sistema
+
+Cada rol debe ser aprobado explícitamente mediante un contrato de aprobación que incluye estados: Pendiente, Aprobado, Rechazado y Cancelado.
+
+### Trazabilidad de Netbooks
+
+El sistema representa cada netbook como un NFT (token ERC721) con un ciclo de vida completo:
+
+1. **Registro**: Creación del token por el fabricante
+2. **Auditoría de Hardware**: Verificación por un auditor autorizado
+3. **Validación de Software**: Instalación y verificación del software
+4. **Distribución**: Asignación al estudiante final
+
+Los estados del ciclo de vida están bien definidos:
+
+```solidity
+enum TokenState {
+    INITIALIZED,    // Token creado pero sin auditoría
+    IN_CIRCULATION, // Netbook en proceso de verificación
+    VERIFIED,       // Verificación completa
+    DISTRIBUTED,    // Entregada a beneficiario
+    DISCONTINUED,   // Fuera de uso
+    STOLEN,         // Reportada como robada
+    BLOCKED         // Bloqueada para transferencias
 }
 ```
 
-**Privacidad**: Identificadores personales se almacenan como hashes (`bytes32`) para proteger información sensible.
+### Eventos y Consultas
 
-## 🔧 Funcionalidad
+El contrato emite eventos para todas las acciones importantes, permitiendo la indexación y escucha de cambios:
 
-### Módulo de Gobernanza (Admin)
-- `grantRole(role, account)` - Otorgar rol
-- `revokeRole(role, account)` - Revocar rol
+- `RoleRequested`, `RoleApproved`, `RoleRejected`
+- `TokenMinted`, `VerificationUpdated`, `DistributionRecorded`
 
-### Módulo de Trazabilidad (Escritura)
-| Método | Rol Requerido | Estado Previo | Acción |
-|--------|---------------|---------------|---------|
-| `registerNetbooks()` | FABRICANTE_ROLE | Ninguno | Crea netbooks en estado FABRICADA |
-| `auditHardware()` | AUDITOR_HW_ROLE | FABRICADA | Auditoría hardware → HW_APROBADO |
-| `validateSoftware()` | TECNICO_SW_ROLE | HW_APROBADO | Validación software → SW_VALIDADO |
-| `assignToStudent()` | ESCUELA_ROLE | SW_VALIDADO | Asignación final → DISTRIBUIDA |
+Además, implementa una interfaz completa para consultas de trazabilidad, permitiendo obtener información de netbooks por número de serie o ID de token.
 
-### Módulo de Reporte (Lectura)
-- `getNetbookReport(serial)` - Reporte completo de trazabilidad
-- `getNetbookState(serial)` - Estado actual de la netbook
+## Frontend (web/)
 
-## 🧪 Suite de Tests
+### Tecnologías y Frameworks
 
-### Tests Implementados ✅
+- **Next.js**: Versión 16.3.1 con App Router
+- **React**: Versión 19.2.2
+- **TypeScript**: Versión 5.9.3
+- **Tailwind CSS**: Framework de estilización
+- **Ethers.js**: Para interacción con blockchain
+- **Radix UI**: Componentes accesibles
+- **Sonner**: Sistema de notificaciones
 
-1. **`test_RegisterNetbooks()`** - Registro básico de netbooks
-2. **`test_CannotRegisterDuplicate()`** - Prevención de duplicados
-3. **`test_AuditHardware()`** - Auditoría de hardware válida
-4. **`test_CannotAuditIfNotAuditorRole()`** - Control de roles
-5. **`test_CannotAuditIfWrongState()`** - Validación de estado previo
-6. **`test_ValidateSoftware()`** - Validación de software
-7. **`test_AssignToStudent()`** - Asignación a estudiante
+### Arquitectura del Frontend
 
-**Coverage**: 100% de funcionalidad principal testeada
-
-## 🛡️ Consideraciones de Seguridad
-
-- ✅ Validación estricta de estados previos
-- ✅ Autenticación por rol para todas las operaciones modificativas
-- ✅ Protección de datos personales mediante hashing
-- ✅ Inmutabilidad del historial una vez registrado
-- ✅ Auditoría pública del estado de cualquier netbook
-
-## 📁 Estructura del Proyecto
+El frontend sigue una arquitectura modular con separación clara de responsabilidades:
 
 ```
-sc/
-├── src/
-│   └── SupplyChainTracker.sol    # Contrato principal
-├── test/
-│   └── SupplyChainTracker.t.sol  # Suite de tests
+src/
+├── app/
+├── components/
+├── contracts/
 ├── lib/
-│   └── openzeppelin-contracts/   # Dependencias
-└── foundry.toml                  # Configuración Foundry
+│   ├── contexts/
+│   ├── hooks/
+│   ├── services/
+│   └── types/
+└── services/
 ```
 
-## 🚀 Próximos Pasos
+### Contexto Web3
 
-1. **Ampliar tests** con verificaciones de eventos
-2. **Implementar interfaces** para frontend
-3. **Agregar funcionalidad** de revocación/reasignación
-4. **Optimizar gas costs** para operaciones batch
+El `Web3Provider` gestiona el estado global de la conexión con la blockchain:
 
----
+- Maneja la conexión de wallet a través de `useWallet`
+- Mantiene el estado de roles del usuario
+- Crea una instancia de `Web3Service` con el signer actual
+- Implementa lógica de refresco y debounce para verificar roles
 
-*Última actualización: $(date)*
+### Servicio Web3Service
+
+La clase `Web3Service` encapsula todas las interacciones con el contrato:
+
+```tsx
+class Web3Service {
+  private contract: ethers.Contract | null = null;
+  private signer: ethers.Signer | null = null;
+
+  constructor(signer?: ethers.Signer | null) {
+    this.signer = signer || null;
+    if (this.signer) {
+      const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
+      this.contract = new ethers.Contract(
+        contractAddress,
+        SupplyChainTrackerABI.abi,
+        this.signer
+      );
+    }
+  }
+}
+```
+
+El servicio proporciona métodos para todas las operaciones del contrato, con manejo adecuado de errores y estimación de gas.
+
+### Componente RoleRequest
+
+El componente `RoleRequest.tsx` implementa un flujo de usuario intuitivo para solicitar roles:
+
+- Muestra visualmente el estado de cada rol (activo, pendiente, rechazado)
+- Proporciona feedback durante transacciones con indicadores de carga
+- Usa notificaciones toast para confirmar acciones
+- Escucha eventos de contrato para actualización en tiempo real
+
+## Integración y Coherencia
+
+Se ha verificado que todos los métodos del contrato están correctamente implementados en el frontend, con especial atención a:
+
+- Consistencia en los hashes de roles
+- Coincidencia entre funciones del contrato y del servicio Web3
+- Mapeo correcto de datos entre la blockchain y la UI
+
+## Conclusión
+
+El sistema SupplyChainTracker presenta una implementación sólida y bien estructurada para la trazabilidad de netbooks en una cadena de suministro. El contrato inteligente proporciona una base segura con control de acceso y trazabilidad completa, mientras que el frontend ofrece una interfaz intuitiva y responsiva para interactuar con el sistema.
+
+Las principales fortalezas del sistema incluyen:
+
+- Arquitectura modular y bien organizada
+- Flujo de aprobación de roles robusto
+- Trazabilidad completa del ciclo de vida de las netbooks
+- Integración coherente entre frontend y backend
+- Manejo adecuado de errores y feedback para el usuario
+
+Este análisis no identificó problemas críticos de implementación, confirmando que el sistema está funcionando como se

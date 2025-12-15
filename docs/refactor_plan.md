@@ -1,108 +1,208 @@
-# Plan de Refactorización - SupplyChainTracker
+# Plan de Refactorización del Proyecto SupplyChainTracker
 
-## 📌 Objetivo
-Mejorar la seguridad, funcionalidad y escalabilidad del sistema de trazabilidad de netbooks mediante refactorización priorizada.
+Este documento detalla el plan para refactorizar el sistema de trazabilidad de netbooks, mejorando la coherencia, mantenibilidad y experiencia de usuario.
 
----
+## Objetivos del Refactor
 
-## 🔍 Análisis de Criticidad
+1. Mejorar la consistencia entre el contrato inteligente y el frontend
+2. Optimizar el flujo de solicitudes de roles
+3. Mejorar la experiencia de usuario en la interacción con la blockchain
+4. Reforzar la seguridad y validaciones
+5. Documentar completamente el sistema
 
-| Componente               | Riesgo          | Impacto                          |
-|--------------------------|-----------------|----------------------------------|
-| Gestión de Roles (RBAC)  | **Alto**        | Ataques de suplantación          |
-| Máquina de Estados       | **Alto**        | Bloqueos en trazabilidad         |
-| Auditoría de Hardware    | **Medio**       | Reportes no auditables           |
-| Distribución a Estudiantes | **Medio-Alto** | Problemas legales                |
-| Interfaz con Frontend    | **Alto**        | Falta de integración             |
+## Áreas de Refactorización
 
----
+### 1. Sincronización de Roles entre Contrato y Frontend
 
-## 📋 Plan de Refactorización
+**Problema Detectado**: Inconsistencia en la definición de roles entre el contrato y el frontend.
 
-### **🔴 Fase 1: Crítico (Seguridad y Funcionalidad)**
-1. **Refactorizar RBAC**
-   - **Archivo**: [`sc/src/SupplyChainTracker.sol`](sc/src/SupplyChainTracker.sol:230-352)
-   - **Acciones**:
-     - Implementar `nonReentrant` en funciones de roles.
-     - Validar `msg.sender` en operaciones sensibles.
-   - **Impacto**: Reduce riesgo de reentrancia y suplantación.
+**Análisis**:
+- Contrato define roles como `FABRICANTE_ROLE`, `AUDITOR_HW_ROLE`, `TECNICO_SW_ROLE`, `ESCUELA_ROLE`
+- Frontend en `Web3Service.ts` define constantes que deben ser exactamente iguales
 
-2. **Validar Transiciones de Estados**
-   - **Archivo**: [`sc/src/SupplyChainTracker.sol`](sc/src/SupplyChainTracker.sol:405-477)
-   - **Acciones**:
-     - Añadir validaciones estrictas en `auditHardware`, `validateSoftware`.
-     - Usar `onlyApprovedRole` para todas las funciones modificativas.
-   - **Impacto**: Evita estados inválidos.
+**Solución Propuesta**:
+1. Crear un archivo de constantes compartido (o asegurar consistencia)
+2. Validar que los hashes de roles coincidan exactamente
 
-3. **Asegurar Integridad de Reportes**
-   - **Archivo**: [`sc/src/SupplyChainTracker.sol`](sc/src/SupplyChainTracker.sol:405-477)
-   - **Acciones**:
-     - Exigir firmas digitales para reportes.
-     - Almacenar hashes de certificados.
-   - **Impacto**: Aumenta confianza en auditorías.
+```typescript
+// En web/src/lib/constants/roles.ts
+export const ROLE_CONSTANTS = {
+  FABRICANTE_ROLE: ethers.keccak256(ethers.toUtf8Bytes('FABRICANTE_ROLE')),
+  AUDITOR_HW_ROLE: ethers.keccak256(ethers.toUtf8Bytes('AUDITOR_HW_ROLE')),
+  TECNICO_SW_ROLE: ethers.keccak256(ethers.toUtf8Bytes('TECNICO_SW_ROLE')),
+  ESCUELA_ROLE: ethers.keccak256(ethers.toUtf8Bytes('ESCUELA_ROLE')),
+  DEFAULT_ADMIN_ROLE: '0x0000000000000000000000000000000000000000000000000000000000000000'
+};
+```
 
----
+### 2. Mejora del Componente RoleRequest
 
-### **🟡 Fase 2: Medio-Alto (Consistencia y Escalabilidad)**
-4. **Optimizar Registro de Netbooks**
-   - **Archivo**: [`sc/src/SupplyChainTracker.sol`](sc/src/SupplyChainTracker.sol:242-273)
-   - **Acciones**:
-     - Validar formato de `batchId` y `serialNumber`.
-     - Implementar registro en lotes con costo de gas reducido.
-   - **Impacto**: Elimina duplicados y mejora eficiencia.
+**Problema Detectado**: El componente de solicitud de roles puede mejorarse en cuanto a UX y funcionalidad.
 
-5. **Añadir Funcionalidad de Revokación**
-   - **Archivo**: Nuevo método en [`sc/src/SupplyChainTracker.sol`](sc/src/SupplyChainTracker.sol)
-   - **Acciones**:
-     - Implementar `revokeAndReassign` con aprobación administrativa.
-     - Registrar eventos de revokación.
-   - **Impacto**: Resuelve problemas legales en casos de pérdida/robos.
+**Mejoras Propuestas**:
 
-6. **Proteger Historial de Verificación**
-   - **Archivo**: [`sc/src/SupplyChainTracker.sol`](sc/src/SupplyChainTracker.sol:54-60)
-   - **Acciones**:
-     - Usar `immutable` para datos críticos.
-     - Implementar hash del historial.
-   - **Impacto**: Garantiza inmutabilidad de auditorías.
+#### A. Añadir Historial de Transacciones
 
----
+Incluir el hash de transacción en la UI para mayor transparencia:
 
-### **🟢 Fase 3: Mejoras (Experiencia de Usuario y Escalabilidad)**
-7. **Definir Interfaz para Frontend**
-   - **Archivo**: [`sc/interfaces/IFrontendSupplyChain.sol`](sc/interfaces/IFrontendSupplyChain.sol)
-   - **Acciones**:
-     - Crear ABI y eventos estandarizados.
-     - Documentar endpoints para consultas.
-   - **Impacto**: Facilita integración con la interfaz web.
+```tsx
+// En RoleRequest.tsx
+interface RoleStatus extends UserRoleStatus {
+  lastTransactionHash?: string; // Nuevo campo
+  lastTransactionTimestamp?: number;
+}
+```
 
-8. **Optimizar Costos de Gas**
-   - **Archivo**: [`sc/src/SupplyChainTracker.sol`](sc/src/SupplyChainTracker.sol:482-537)
-   - **Acciones**:
-     - Reemplazar bucles con mapeos estáticos.
-     - Usar `struct` para almacenamiento eficiente.
-   - **Impacto**: Reduce costos en operaciones masivas.
+#### B. Implementar Periodo de Espera entre Solicitudes
 
-9. **Añadir Pruebas para Casos Edge**
-   - **Archivo**: [`sc/test/SupplyChainTracker.t.sol`](sc/test/SupplyChainTracker.t.sol)
-   - **Acciones**:
-     - Tests para revokación de roles y reentrancia.
-     - Pruebas de estrés con `forge`.
-   - **Impacto**: Mejora cobertura y detección de bugs.
+Evitar spam de solicitudes añadiendo un cooldown:
 
----
+```tsx
+// En Web3Service.ts
+async requestRoleApproval(role: string): Promise<string> {
+  // Verificar cooldown
+  const lastRequest = localStorage.getItem(`lastRoleRequest_${role}`);
+  if (lastRequest) {
+    const lastRequestTime = parseInt(lastRequest);
+    const now = Date.now();
+    const cooldownPeriod = 5 * 60 * 1000; // 5 minutos
+    
+    if (now - lastRequestTime < cooldownPeriod) {
+      throw new Error(`Debe esperar ${Math.ceil((cooldownPeriod - (now - lastRequestTime)) / 1000)} segundos antes de reintentar`);
+    }
+  }
+  
+  // ... resto del código
+  
+  // Guardar timestamp después de éxito
+  localStorage.setItem(`lastRoleRequest_${role}`, Date.now().toString());
+  
+  return txHash;
+}
+```
 
-## 📅 Roadmap
-| Fase      | Duración Estimada | Responsable       |
-|-----------|-------------------|-------------------|
-| Fase 1    | 2 semanas         | Kilo Code         |
-| Fase 2    | 1.5 semanas       | Kilo Code         |
-| Fase 3    | 1 semana          | Kilo Code         |
+### 3. Refactorización del Servicio Web3Service
 
----
+**Problema Detectado**: El servicio tiene lógica duplicada y puede modularizarse.
 
-## 📝 Notas
-- **Prioridad**: Enfocarse primero en seguridad (Fase 1) antes de escalabilidad (Fase 3).
-- **Dependencias**: La Fase 3 depende de la implementación de la interfaz en Fase 2.
-- **Pruebas**: Todas las modificaciones deben ser testeadas con `forge` antes de deploy.
+**Plan de Refactorización**:
 
----
+1. **Separar en módulos por funcionalidad**:
+   - `roleService.ts`: Gestión de roles
+   - `netbookService.ts`: Gestión de netbooks
+   - `traceabilityService.ts`: Consultas de trazabilidad
+
+2. **Implementar caché para consultas frecuentes**:
+
+```typescript
+// En un nuevo archivo cacheService.ts
+export class CacheService {
+  private cache: Map<string, { data: any, timestamp: number }> = new Map();
+  private defaultTTL = 30000; // 30 segundos
+  
+  get(key: string) {
+    const item = this.cache.get(key);
+    if (!item) return null;
+    
+    if (Date.now() - item.timestamp > this.defaultTTL) {
+      this.cache.delete(key);
+      return null;
+    }
+    
+    return item.data;
+  }
+  
+  set(key: string, data: any, ttl: number = this.defaultTTL) {
+    this.cache.set(key, { data, timestamp: Date.now() });
+    // Limpiar automáticamente
+    setTimeout(() => {
+      this.cache.delete(key);
+    }, ttl);
+  }
+}
+```
+
+### 4. Mejoras de Seguridad
+
+**Recomendaciones**:
+
+#### A. Validación de Red
+
+Asegurar que el usuario esté en la red correcta antes de interactuar:
+
+```tsx
+// En useWallet.ts
+const checkNetwork = async (provider: any) => {
+  const network = await provider.getNetwork();
+  const expectedChainId = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '31337');
+  
+  if (network.chainId !== expectedChainId) {
+    throw new Error(`Red incorrecta. Por favor, cambie a la red local (Chain ID: ${expectedChainId})`);
+  }
+};
+```
+
+#### B. Mejor Manejo de Errores
+
+Crear un sistema de mapeo de errores más robusto:
+
+```typescript
+// En utils/contractErrors.ts
+export const CONTRACT_ERROR_MAP = {
+  'user rejected transaction': 'El usuario rechazó la transacción',
+  'Fondos insuficientes': 'Fondos insuficientes para pagar el gas',
+  'network error': 'Error de red. Verifique su conexión e intente nuevamente',
+  'execution reverted: Rol ya aprobado': 'Ya tienes este rol aprobado',
+  'execution reverted: Ya tienes una solicitud activa': 'Ya tienes una solicitud pendiente para este rol'
+};
+
+export const handleError = (error: any): string => {
+  const message = error.message || error.toString();
+  
+  // Buscar coincidencias en el mapeo
+  for (const [key, value] of Object.entries(CONTRACT_ERROR_MAP)) {
+    if (message.includes(key)) {
+      return value;
+    }
+  }
+  
+  // Mensaje genérico
+  return 'Ocurrió un error inesperado. Por favor, inténtelo de nuevo.';
+};
+```
+
+### 5. Documentación y Testing
+
+**Plan**:
+
+1. Generar documentación completa del contrato con NatSpec
+2. Implementar tests para nuevos componentes
+3. Crear diagramas UML del sistema
+4. Documentar flujos de usuario
+
+```solidity
+/// @dev Registra la auditoría de hardware para una netbook
+/// @param serialNumber Número de serie de la netbook
+/// @param reportHash Hash del reporte de auditoría
+/// @notice El llamante debe tener el rol AUDITOR_HW_ROLE
+/// @notice El estado de la netbook debe ser INITIALIZED
+/// @return tokenId ID del token asociado a la netbook
+function auditHardware(string memory serialNumber, bytes32 reportHash) 
+    public onlyAuthorizedVerifier(AUDITOR_HW_ROLE) nonReentrant
+```
+
+## Cronograma de Implementación
+
+| Semana | Tareas |
+|--------|--------|
+| 1 | Sincronización de roles y validación de red |
+| 2 | Refactorización del servicio Web3 y caché |
+| 3 | Mejoras de UX en RoleRequest y manejo de errores |
+| 4 | Implementación de tests y documentación |
+| 5 | Pruebas integrales y despliegue |
+
+## Conclusión
+
+Este plan de refactorización mejorará significativamente la calidad del código, experiencia de usuario y mantenibilidad del sistema. Las principales mejoras incluyen mayor coherencia entre capas, mejor manejo de errores, y una arquitectura más modular que facilitará futuras extensiones.
+
+La refactorización se realizará de manera incremental para minimizar el riesgo, con pruebas comprehensivas en cada etapa.

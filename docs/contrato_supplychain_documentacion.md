@@ -1,71 +1,92 @@
-# Documentación del Contrato SupplyChainTracker
+# Documentación Completa del Contrato SupplyChainTracker
 
-## Visión General
-El contrato `SupplyChainTracker` es un sistema de trazabilidad para netbooks del Plan de Inclusión Digital, donde cada netbook es representada como un NFT (nToken) con seguimiento del ciclo de vida completo.
+## Contrato Principal
 
-## Estructuras de Datos
+### SupplyChainTracker.sol
 
-### `Netbook`
-Estructura que contiene toda la información de trazabilidad de una netbook:
+El contrato principal es un sistema de rastreo de netbooks mediante NFTs que implementa múltiples estándares y funcionalidades:
 
 ```solidity
-struct Netbook {
-    string serialNumber;                    // Número de serie
-    string batchId;                         // ID del lote de fabricación
-    string specs;                          // Especificaciones técnicas
-    uint8 state;                           // Estado actual (enum TokenState)
-    
-    // Auditoría de Hardware
-    address hwAuditor;                     // Auditor de hardware
-    bytes32 hwReportHash;                  // Hash del reporte de auditoría
-    bool hwIntegrityPassed;                // ¿Pasó la auditoría?
-    
-    // Validación de Software
-    address swTechnician;                  // Técnico de software
-    string osVersion;                      // Versión del sistema operativo
-    bool swValidationPassed;               // ¿Pasó la validación?
-    
-    // Distribución
-    bytes32 destinationSchoolHash;         // Hash de la escuela destino
-    bytes32 studentIdHash;                 // Hash del ID del estudiante
-    uint256 distributionTimestamp;         // Fecha de distribución
+contract SupplyChainTracker is ERC721Enumerable, AccessControl, ReentrancyGuard, IERC721SupplyChain {
+```
+
+**Herencia**:
+- `ERC721Enumerable`: Estándar de tokens no fungibles con enumeración
+- `AccessControl`: Sistema de control de acceso basado en roles
+- `ReentrancyGuard`: Protección contra reentrada
+- `IERC721SupplyChain`: Interfaz personalizada para trazabilidad
+
+**Constructor**:
+```solidity
+constructor() ERC721("SecureNetbookToken", "SNBK") {
+    _tokenIdCounter = 1;
+    _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
 }
 ```
 
-### `TokenMetadata`
-Datos básicos y de trazabilidad del token:
+El contrato se inicializa con el emisor como administrador y un contador de tokens que comienza en 1.
+
+## Roles del Sistema
+
+El sistema implementa un modelo de autorización jerárquico con roles específicos:
+
+### Definición de Roles
+
+```solidity
+bytes32 public constant FABRICANTE_ROLE = keccak256("FABRICANTE_ROLE");
+bytes32 public constant AUDITOR_HW_ROLE = keccak256("AUDITOR_HW_ROLE");
+bytes32 public constant TECNICO_SW_ROLE = keccak256("TECNICO_SW_ROLE");
+bytes32 public constant ESCUELA_ROLE = keccak256("ESCUELA_ROLE");
+```
+
+Cada rol corresponde a una entidad en la cadena de suministro:
+- **Fabricante**: Registra productos y lotes
+- **Auditor de Hardware**: Verifica integridad física
+- **Técnico de Software**: Gestiona software y actualizaciones
+- **Escuela**: Asigna dispositivos a estudiantes
+
+### Estados de Solicitud de Roles
+
+```solidity
+enum RoleState {
+    Pending,
+    Approved,
+    Rejected,
+    Canceled
+}
+
+struct RoleApproval {
+    RoleState state;
+    address account;
+    bytes32 role;
+    address approvedBy;
+    uint256 approvalTimestamp;
+}
+```
+
+El flujo completo de solicitud de roles incluye estados para gestión completa del ciclo de vida de autorización.
+
+## Gestión de Netbooks (Tokens NFT)
+
+### Metadatos del Token
 
 ```solidity
 struct TokenMetadata {
-    string serialNumber;                   // Número de serie
-    string manufacturer;                   // Fabricante
-    string technicalSpecs;                 // Especificaciones técnicas
-    string batchId;                        // ID del lote
-    string hardwareAuditReportHash;        // Hash del reporte de hardware
-    string softwareValidationReportHash;   // Hash del reporte de software
-    string distributionCertificateHash;    // Hash del certificado de distribución
-    bytes32 schoolHash;                    // Hash de la escuela (almacenado como bytes32)
-    bytes32 studentIdHash;                 // Hash del estudiante (almacenado como bytes32)
+    string serialNumber;
+    string manufacturer;
+    string technicalSpecs;
+    string batchId;
+    string hardwareAuditReportHash;
+    string softwareValidationReportHash;
+    string distributionCertificateHash;
+    bytes32 schoolHash;
+    bytes32 studentIdHash;
 }
 ```
 
-### `VerificationRecord`
-Historial de verificaciones:
+Cada token NFT almacena información completa sobre la netbook que representa, incluyendo datos de fabricación, auditoría y distribución.
 
-```solidity
-struct VerificationRecord {
-    address verifier;                     // Quién realizó la verificación
-    TokenState previousState;             // Estado anterior
-    TokenState newState;                  // Estado nuevo
-    uint256 timestamp;                    // Fecha y hora
-    string certificateHash;               // Hash del certificado
-}
-```
-
-## Enumeraciones
-
-### `TokenState`
-Estados del ciclo de vida de la netbook:
+### Estados del Ciclo de Vida
 
 ```solidity
 enum TokenState {
@@ -79,161 +100,135 @@ enum TokenState {
 }
 ```
 
-## Mapeos
+El sistema implementa una máquina de estados que controla el progreso de cada netbook a través de la cadena de suministro.
+
+## Funciones Clave del Contrato
+
+### Registro de Netbooks
 
 ```solidity
-mapping(uint256 => TokenMetadata) public tokenMetadata;      // Datos del token
-mapping(uint256 => TokenState) public tokenState;            // Estado actual
-mapping(uint256 => VerificationRecord[]) public verificationHistory;  // Historial
-mapping(string => uint256) public serialNumberToTokenId;     // Búsqueda por serial
-mapping(address => bool) public hardwareVerifiers;          // Auditores HW
-mapping(address => bool) public softwareVerifiers;          // Técnicos SW
-mapping(address => bool) public distributionOfficers;       // Oficiales de distribución
+function registerNetbooks(
+    string[] memory serialNumbers,
+    string[] memory batchIds,
+    string[] memory specs
+) public onlyApprovedRole(FABRICANTE_ROLE)
 ```
 
-## Eventos
+Registra múltiples netbooks a la vez, creando tokens NFT asociados. Requiere el rol de fabricante y valida que no existan duplicados.
+
+### Auditoría de Hardware
+
+```solidity
+function auditHardware(string memory serialNumber, bytes32 reportHash) 
+    public onlyAuthorizedVerifier(AUDITOR_HW_ROLE) nonReentrant
+```
+
+Registra la verificación del hardware, moviendo el estado a `IN_CIRCULATION`. Almacena el hash del reporte de auditoría.
+
+### Validación de Software
+
+```solidity
+function validateSoftware(string memory serialNumber, string memory osVersion) 
+    public onlyAuthorizedVerifier(TECNICO_SW_ROLE) nonReentrant
+```
+
+Registra la validación del software, moviendo el estado a `VERIFIED`. Almacena la versión del sistema operativo.
+
+### Asignación a Estudiante
+
+```solidity
+function assignToStudent(string memory serialNumber, bytes32 schoolHash, bytes32 studentHash) 
+    public onlyAuthorizedVerifier(ESCUELA_ROLE) nonReentrant
+```
+
+Asigna una netbook verificada a un estudiante, moviendo el estado a `DISTRIBUTED`. Usa hashes para proteger la privacidad.
+
+## Reportes y Consultas
+
+### Reporte Completo
+
+```solidity
+function getSupplyChainReport(uint256 tokenId) external view returns (Netbook memory)
+```
+
+Obtiene un reporte completo de la trazabilidad de una netbook, combinando todos los datos del ciclo de vida.
+
+### Consultas por Número de Serie
+
+```solidity
+function getNetbookReport(string memory serialNumber) public view returns (IERC721SupplyChain.Netbook memory)
+function getNetbookState(string memory serialNumber) public view returns (uint8)
+```
+
+Permite consultar información utilizando el número de serie en lugar del ID del token.
+
+## Eventos del Contrato
+
+### Eventos de Roles
+
+```solidity
+event RoleRequested(bytes32 indexed role, address indexed account);
+event RoleApproved(bytes32 indexed role, address indexed account, address indexed approvedBy);
+event RoleRejected(bytes32 indexed role, address indexed account, address indexed rejectedBy);
+event RoleRequestCanceled(bytes32 indexed role, address indexed account);
+```
+
+Registra todas las acciones relacionadas con solicitudes y aprobaciones de roles.
+
+### Eventos de Trazabilidad
 
 ```solidity
 event TokenMinted(uint256 tokenId, string serialNumber, string manufacturer);
 event VerificationUpdated(uint256 indexed tokenId, TokenState previousState, TokenState newState, string certificateHash);
-event VerificationRoleRegistered(address verifier, uint8 verificationType);
 event DistributionRecorded(uint256 tokenId, bytes32 schoolHash, bytes32 studentIdHash, uint256 timestamp);
-event TokenStateUpdated(uint256 tokenId, TokenState newState);
 ```
 
-## Funciones Principales
-
-### `mint`
-Crea un nuevo token para una netbook:
-
-```solidity
-function mint(
-    string memory serialNumber,
-    string memory manufacturer,
-    string memory technicalSpecs,
-    string memory batchId
-) public onlyOwner returns (uint256 tokenId)
-```
-
-**Parámetros:**
-- `serialNumber`: Número de serie único
-- `manufacturer`: Fabricante de la netbook
-- `technicalSpecs`: Especificaciones técnicas
-- `batchId`: ID del lote de fabricación
-
-**Flujo:**
-1. Verifica que el serial no exista
-2. Crea el token con estado `INITIALIZED`
-3. Asocia los metadatos
-4. Emite evento `TokenMinted`
-
-### `addHardwareVerification`
-Registra la auditoría de hardware:
-
-```solidity
-function addHardwareVerification(uint256 tokenId, string memory reportHash) public onlyAuthorizedVerifier(1)
-```
-
-**Requiere:**
-- Estado `INITIALIZED` o `IN_CIRCULATION`
-- Ser verificador autorizado (tipo 1)
-
-**Flujo:**
-1. Actualiza el hash del reporte
-2. Cambia estado a `IN_CIRCULATION`
-3. Registra en historial
-4. Emite evento
-
-### `addSoftwareValidation`
-Registra la validación de software:
-
-```solidity
-function addSoftwareValidation(uint256 tokenId, string memory reportHash) public onlyAuthorizedVerifier(2)
-```
-
-**Requiere:**
-- Estado `IN_CIRCULATION`
-- Ser verificador autorizado (tipo 2)
-
-**Flujo:**
-1. Actualiza el hash del reporte
-2. Cambia estado a `VERIFIED`
-3. Registra en historial
-4. Emite evento
-
-### `distribute`
-Distribuye la netbook a un estudiante:
-
-```solidity
-function distribute(
-    uint256 tokenId,
-    bytes32 schoolHash,
-    bytes32 studentHash
-) public onlyDistributionOfficer onlyVerifiedStatus(tokenId)
-```
-
-**Requiere:**
-- Estado `VERIFIED`
-- Ser oficial de distribución
-
-**Flujo:**
-1. Almacena los hashes de escuela y estudiante
-2. Cambia estado a `DISTRIBUTED`
-3. Registra en historial
-4. Emite evento `DistributionRecorded`
-
-### `getSupplyChainReport`
-Obtiene el reporte completo de trazabilidad:
-
-```solidity
-function getSupplyChainReport(uint256 tokenId) external view returns (Netbook memory)
-```
-
-**Devuelve:**
-- Todos los datos de trazabilidad en una sola estructura
-- Combina información de hardware, software y distribución
+Registra eventos clave en el ciclo de vida de las netbooks.
 
 ## Interfaz IERC721SupplyChain
 
-El contrato implementa completamente la interfaz `IERC721SupplyChain` con todas sus funciones:
+El contrato implementa la interfaz personalizada `IERC721SupplyChain` que define métodos de consulta para la trazabilidad:
+
+### Estructura Netbook
 
 ```solidity
-// Consultas básicas
-function getTokenSerialNumber(uint256 tokenId) external view returns (string memory)
-function getTokenBatchId(uint256 tokenId) external view returns (string memory)
-function getTokenSpecs(uint256 tokenId) external view returns (string memory)
-function getTokenState(uint256 tokenId) external view returns (uint8)
-function getTokenStateLabel(uint256 tokenId) external view returns (string memory)
-
-// Datos de verificación
-function getHardwareAuditData(uint256 tokenId) external view returns (address, bytes32, bool)
-function getSoftwareValidationData(uint256 tokenId) external view returns (address, string memory, bool)
-function getDistributionData(uint256 tokenId) external view returns (bytes32, bytes32, uint256)
-
-// Reporte completo
-function getSupplyChainReport(uint256 tokenId) external view returns (Netbook memory)
+struct Netbook {
+    string serialNumber;
+    string batchId;
+    string specs;
+    uint8 state;
+    
+    // Auditoría de Hardware
+    address hwAuditor;
+    bytes32 hwReportHash;
+    bool hwIntegrityPassed;
+    
+    // Validación de Software
+    address swTechnician;
+    string osVersion;
+    bool swValidationPassed;
+    
+    // Distribución
+    bytes32 destinationSchoolHash;
+    bytes32 studentIdHash;
+    uint256 distributionTimestamp;
+}
 ```
 
-## Flujos de Trabajo
+Esta estructura combina todos los datos de trazabilidad en un objeto único para consultas eficientes.
 
-### Flujo Completo de Trazabilidad
-1. **Minting**: Fabricante crea el token
-2. **Auditoría HW**: Verificador de hardware audita
-3. **Validación SW**: Técnico valida el software
-4. **Distribución**: Oficial distribuye a estudiante
-5. **Consulta**: Cualquiera puede verificar el historial completo
+### Métodos de Consulta
 
-## Seguridad
+| Método | Parámetros | Devuelve | Descripción |
+|--------|-----------|---------|------------|
+| `getTokenSerialNumber` | tokenId | string | Número de serie de la netbook |
+| `getTokenBatchId` | tokenId | string | ID del lote de fabricación |
+| `getTokenSpecs` | tokenId | string | Especificaciones técnicas |
+| `getTokenState` | tokenId | uint8 | Estado actual del ciclo de vida |
+| `getTokenStateLabel` | tokenId | string | Etiqueta legible del estado |
+| `getHardwareAuditData` | tokenId | address, bytes32, bool | Datos de auditoría de hardware |
+| `getSoftwareValidationData` | tokenId | address, string, bool | Datos de validación de software |
+| `getDistributionData` | tokenId | bytes32, bytes32, uint256 | Datos de distribución |
+| `getSupplyChainReport` | tokenId | Netbook | Reporte completo de trazabilidad |
 
-### Modificadores
-- `onlyOwner`: Acceso restringido al propietario
-- `onlyAuthorizedVerifier`: Verificadores autorizados
-- `onlyDistributionOfficer`: Oficiales de distribución
-- `onlyVerifiedStatus`: Solo para tokens verificados
-
-### Validaciones
-- Duplicados de número de serie
-- Transiciones de estado válidas
-- Existencia de token
-- Autorización de roles
-- Integridad de datos
+## Coherencia entre Contrato y

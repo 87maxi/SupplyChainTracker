@@ -1,14 +1,15 @@
-"use client";
+'use client';
 
 import { createContext, useContext, ReactNode, useState, useEffect, useMemo, useCallback } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { Web3Service, getRoleConstants } from '../services/Web3Service';
 import { Web3ContextType } from '../types';
+import { toast } from 'sonner';
 
 const Web3Context = createContext<Web3ContextType | undefined>(undefined);
 
 export const Web3Provider = ({ children }: { children: ReactNode }) => {
-  const { address, isConnected, connectWallet, disconnectWallet, isLoading, signer, provider } = useWallet();
+  const { address, isConnected, connectWallet, disconnectWallet, isLoading, signer, provider, chainId } = useWallet();
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [isDefaultAdmin, setIsDefaultAdmin] = useState<boolean>(false);
   const [isManufacturer, setIsManufacturer] = useState<boolean>(false);
@@ -17,15 +18,21 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
   const [isSchool, setIsSchool] = useState<boolean>(false);
   const [hasAnyRole, setHasAnyRole] = useState<boolean>(false);
 
-
-
   // Create Web3Service instance, passing the current signer
   const web3Service = useMemo(() => {
-    console.log('Creating Web3Service instance...');
+    if (!signer) {
+      console.log('No signer available for Web3Service');
+      return null;
+    }
+    
     try {
+      console.log('Recreating Web3Service with new signer');
       return new Web3Service(signer);
     } catch (error) {
       console.error('Failed to create Web3Service:', error);
+      toast.error('Error de conexión', {
+        description: 'No se pudo conectar con la blockchain. Verifica tu conexión a la wallet.'
+      });
       return null;
     }
   }, [signer]);
@@ -51,6 +58,7 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
         const roleConstants = getRoleConstants();
 
         // Check all roles in parallel
+          // Check all roles in parallel, including admin role
         const [
           defaultAdminResult,
           manufacturerResult,
@@ -85,6 +93,9 @@ export const Web3Provider = ({ children }: { children: ReactNode }) => {
 
       } catch (error) {
         console.error('Error during role checking:', error);
+        toast.error('Error de conexión', {
+          description: 'No se pudieron verificar tus roles. Por favor, verifica tu conexión a la red.'
+        });
         setIsDefaultAdmin(false);
         setIsManufacturer(false);
         setIsAuditor(false);

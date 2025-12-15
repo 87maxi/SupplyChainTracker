@@ -1,131 +1,207 @@
-# Análisis del Frontend: Web
+# Análisis del Frontend Web
 
-Este documento presenta un análisis detallado del proyecto frontend `web`, que consume el contrato inteligente `SupplyChainTracker` y proporciona una interfaz web para su gestión.
+## Descripción General
 
-## 1. Información General
+El frontend es una aplicación web construida con Next.js 16.3.1, React 19.2.2 y TypeScript, diseñada para interactuar con el contrato inteligente `SupplyChainTracker`. La aplicación utiliza Tailwind CSS para estilización y proporciona una interfaz para la gestión de roles, búsqueda de netbooks y seguimiento de trazabilidad.
 
-- **Nombre**: `web`
-- **Ubicación**: `web/`
-- **Framework**: Next.js 16.0.7 (App Router)
-- **Bibliotecas Clave**:
-  - `ethers` v6.16.0: Para la interacción con Ethereum.
-  - `viem`: Framework de código abierto para Ethereum (aunque en este código se usa más `ethers`).
-  - `react` 19.2.0, `next` 16.0.7
-  - `lucide-react`, `sonner`, `@hookform/resolvers`, `zod`.
-  - UI Componentes: Utiliza un sistema basado en `@radix-ui`, `shadcn/ui` y Tailwind CSS con componentes personalizados en `web/components/ui/`.
-  - Testing: `jest`. Linting: `eslint`.
-- **Configuración**: Usa TypeScript (`tsconfig.json`), ESLint (`eslint.config.mjs`), y PostCSS (`postcss.config.mjs`). Vite no está presente, lo cual es inusual para Next.js 13+.
+## Framework y Tecnologías Utilizadas
 
-## 2. Arquitectura y Estructura de Componentes
+El frontend utiliza un stack tecnológico moderno:
 
-```
+- **Next.js 16.3.1**: Framework React para renderizado tanto en servidor como en cliente
+- **React 19.2.2**: Biblioteca de interfaz de usuario
+- **TypeScript 5.9.3**: Lenguaje de programación con tipado estático
+- **Tailwind CSS 4.1.18**: Framework de estilización utility-first
+- **Ethers.js 6.16.0**: Para interactuar con la blockchain Ethereum
+- **Radix UI**: Componentes primitivos para accesibilidad
+- **Sonner**: Sistema de notificaciones
+- **Zod**: Validación de esquemas (implícito en uso de formularios)
+
+La configuración se encuentra en:
+- `next.config.ts`: Configuración de Next.js
+- `tsconfig.json`: Configuración de TypeScript
+- `postcss.config.mjs`: Configuración de PostCSS para Tailwind
+- `eslint.config.mjs`: Configuración de ESLint
+
+## Estructura de Directorios
+
+```bash
 src/
-├── app/
-│   ├── page.tsx           # Página de inicio/Landing
-│   ├── layout.tsx         # Layout raíz
-│   ├── dashboard/
-│   ├── admin/
-│   └── profile/
-├── components/
-│   ├── admin/             # Componentes específicos de administración
-│   ├── dashboard/
-│   ├── layout/            # Componentes de UI compartidos (Header, Breadcrumbs)
-│   ├── netbooks/          # Componentes para netbooks
-│   └── ui/                # Componentes UI base (Button, Card, Badge, etc.)
-├── contracts/
-│   └── SupplyChainTrackerABI.json  # ABI del contrato
-├── lib/
-│   ├── contexts/          # Contextos de React (Web3Context)
-│   ├── hooks/             # Hooks personalizados (useWallet)
-│   ├── services/          # Lógica de negocio y servicios Web3 (Web3Service)
-│   ├── types/             # Tipos globales (Netbook, UserRoleStatus, etc.)
-│   └── utils.ts           # Funciones de utilidad
+├── app/                # Rutas de la aplicación (App Router)
+├── components/         # Componentes reutilizables
+├── contracts/          # ABI y metadatos de contratos
+├── lib/                # Lógica de aplicación, hooks, contextos
+├── services/          # Servicios de negocio
+└── types/             # Tipos TypeScript
 ```
 
-## 3. Contexto y Gestión del Estado
+## Contexto Web3 y Gestión de Estado
 
-### 3.1. `Web3Context`
+### Web3Context.tsx
 
-Ubicado en `src/lib/contexts/Web3Context.tsx`. Es el corazón de la aplicación, provee el estado de conexión, dirección, Firmante (`signer`) y el `Web3Service` a todo el árbol de componentes.
+El contexto principal `Web3Provider` gestiona el estado global de la conexión web3:
 
-- **Valores Proveídos (`Web3ContextType`)**:
-  - `address`: Dirección de la wallet conectada.
-  - `isConnected`: Booleano que indica si hay una conexión activa.
-  - `hasAnyRole`, `isManufacturer`, `isAuditor`, etc.: Estados booleanos que indican los roles del usuario.
-  - `web3Service`: Instancia del `Web3Service` (crucial para la lógica).
-  - `refreshRoles`: Función para refrescar manualmente los roles (importante después de una aprobación).
+- Utiliza `useWallet` para manejar la conexión de wallet
+- Mantiene estados para cada tipo de rol (fabricante, auditor, técnico, escuela, administrador)
+- Proporciona una instancia de `Web3Service` configurada con el signer actual
+- Implementa mecanismos de debounce para evitar refreshes excesivos
+- Usa `sonner` para notificaciones de error
 
-- **Lógica Interna**:
-  - Usa `useWallet` para conectar/desconectar y obtener el `signer`.
-  - Crea una instancia de `Web3Service` con el `signer`.
-  - `useCallback` y `useEffect` para `checkRoles`, que interroga el contrato para determinar todos los roles del usuario (`hasRole`) y actualiza los estados correspondientes (`isAdmin`, `isManufacturer`, etc.).
-  - Implementa un "debounce" sencillo para evitar refrescos masivos.
-
-### 3.2. `useWallet`
-
-Un hook personalizado que encapsula la lógica de conexión con MetaMask. Utiliza `window.ethereum` para solicitar cuentas y crear un `BrowserProvider` y un `signer`. Es un wrapper limpio alrededor de `ethers`.
-
-## 4. Servicio de Interacción con el Contrato (Web3Service)
-
-El `Web3Service` (`src/lib/services/Web3Service.ts`) es la capa de abstracción principal que interactúa con el contrato.
-
-### 4.1. Constructor y Proveedores
-
-```typescript
-class Web3Service {
-  public readOnlyContract: ethers.Contract;
-  private signer: Signer | null;
-
-  constructor(signer: Signer | null) {
-    // Proveedor de lectura (JsonRpcProvider) para "view" functions
-    const readOnlyProvider = new ethers.JsonRpcProvider(RPC_URL);
-    this.readOnlyContract = new ethers.Contract(CONTRACT_ADDRESS, SupplyChainTrackerABI, readOnlyProvider);
-    
-    // `signer` para funciones de escritura (transactions)
-    this.signer = signer;
-  }
+```tsx
+const Web3Provider = ({ children }: { children: ReactNode }) => {
+  const { address, isConnected, connectWallet, disconnectWallet, isLoading, signer } = useWallet();
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [isManufacturer, setIsManufacturer] = useState<boolean>(false);
+  // ... otros estados de rol
   
-  // Obtiene el contrato con firmante, lanzando error si no hay signer.
-  private async getContractWithSigner(): Promise<ethers.Contract> {
-    if (!this.signer) throw new Error('Wallet not connected...');
-    return new ethers.Contract(CONTRACT_ADDRESS, SupplyChainTrackerABI, this.signer);
+  const web3Service = useMemo(() => {
+    if (!signer) return null;
+    return new Web3Service(signer);
+  }, [signer]);
+
+  const checkRoles = useCallback(async () => {
+    if (isConnected && address && web3Service) {
+      try {
+        // Verificar todos los roles en paralelo
+        const [
+          defaultAdminResult,
+          manufacturerResult,
+          auditorResult,
+          technicianResult,
+          schoolResult
+        ] = await Promise.all([
+          web3Service.hasRole(roleConstants.DEFAULT_ADMIN_ROLE, address),
+          web3Service.hasRole(roleConstants.FABRICANTE_ROLE, address),
+          web3Service.hasRole(roleConstants.AUDITOR_HW_ROLE, address),
+          web3Service.hasRole(roleConstants.TECNICO_SW_ROLE, address),
+          web3Service.hasRole(roleConstants.ESCUELA_ROLE, address)
+        ]);
+        
+        // Actualizar estados
+        setIsDefaultAdmin(defaultAdminResult);
+        setIsManufacturer(manufacturerResult);
+        // ... actualizar otros estados
+      } catch (error) {
+        // Manejo de errores
+      }
+    }
+  }, [isConnected, address, web3Service]);
+
+  // Efectos para chequear roles
+};
+```
+
+## Servicio Web3Service
+
+La clase `Web3Service` encapsula todas las interacciones con el contrato blockchain:
+
+- **Constructor**: Configura el contrato con la dirección del contrato y el signer
+- **Variables estáticas de roles**: Define los hashes de roles consistentes con el contrato
+- **Métodos principales**:
+
+```tsx
+class Web3Service {
+  private contract: ethers.Contract | null = null;
+  private signer: ethers.Signer | null = null;
+
+  constructor(signer?: ethers.Signer | null) {
+    this.signer = signer || null;
+    if (this.signer) {
+      const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
+      this.contract = new ethers.Contract(
+        contractAddress,
+        SupplyChainTrackerABI.abi,
+        this.signer
+      );
+    }
+  }
+
+  async hasRole(role: string, address: string): Promise<boolean> {
+    if (!this.contract) return false;
+    try {
+      const result = await this.contract.hasRole(role, address);
+      return result;
+    } catch (error) {
+      // Manejo de errores
+      return false;
+    }
+  }
+
+  async requestRoleApproval(role: string): Promise<string> {
+    if (!this.contract) {
+      throw new Error('Servicio de contrato no inicializado');
+    }
+
+    try {
+      // Pre-validación
+      const address = await this.signer!.getAddress();
+      const currentStatus = await this.getRoleStatus(role, address);
+      
+      if (currentStatus.state === 1) {
+        throw new Error('Ya tienes este rol aprobado');
+      }
+      
+      if (currentStatus.state === 0 && currentStatus.account !== '0x0000000000000000000000000000000000000000') {
+        throw new Error('Ya tienes una solicitud pendiente');
+      }
+
+      // Estimar gas
+      const gasEstimate = await this.contract.requestRoleApproval.estimateGas(role);
+      
+      // Enviar transacción con buffer de gas (120%)
+      const tx = await this.contract.requestRoleApproval(role, {
+        gasLimit: (gasEstimate * BigInt(120)) / BigInt(100)
+      });
+      
+      await tx.wait();
+      return tx.hash;
+    } catch (error: any) {
+      // Parsear errores específicos
+      if (error.message?.includes('Rol ya aprobado')) {
+        throw new Error('Ya tienes este rol aprobado');
+      }
+      if (error.code === 'ACTION_REJECTED') {
+        throw new Error('user rejected transaction');
+      }
+      // ... otros manejadores de error
+      throw error;
+    }
   }
 }
 ```
 
-La separación en un **contrato de solo lectura** y otro de **solo escritura** es una buena práctica que mejora la eficiencia y confiabilidad.
+## Componente RoleRequest.tsx
 
-### 4.2. Métodos
+Este componente permite a los usuarios solicitar roles en el sistema:
 
-El `Web3Service` expone todos los métodos necesarios del contrato, divididos en **lectura (view)** y **escritura (transactions)** y maneja sus tipos.
+### Características Principales
 
-#### Métodos de Lectura
+- **UI Moderna**: Utiliza Card de Radix UI con iconos de Lucide React
+- **Feedback Visual**: Estado visual para cada rol (activo, pendiente, rechazado)
+- **Manejo de Carga**: Indicadores de carga durante transacciones
+- **Notificaciones**: Uso de `sonner` para feedback de usuario
+- **Event Listeners**: Escucha eventos de contrato para actualizar estado en tiempo real
 
-Estos usan `this.readOnlyContract` y devuelven promesas con tipos adaptables.
+### Flujo de Solicitud de Rol
 
-- **`hasRole(role, account)`**: Interioriza perfectamente el `boolean` devuelto por el contrato.
-- **`getRoleStatus(role, account)`**: Mapea el array de retorno a `UserRoleStatus`. **Nota**: Automáticamente convierte `BigInt` a `string` en timestamps y `number` en el estado.
-- **`getAllPendingRoleRequests()`**: Una función clave que mapea todas las solicitudes pendientes. Es fundamental para la funcionalidad del Dashboard.
-- **`getNetbookReport(serialNumber)`**: Mapea exactamente los 13 campos de la estructura `Netbook` del contrato a la interfaz `NetbookReport`. Convierte los `uint` y `bytes32` del contrato a `string` o `number` para el frontend y maneja `BigInt`.
-- **`getNetbookState(serialNumber)`**: Convierte `uint` (BigNumber) a `number`.
+1. **Verificación Previa**: Antes de enviar transacción, verifica estado actual
+2. **Estimación de Gas**: Calcula gas necesario + 20% buffer
+3. **Notificaciones Progresivas**:
+   - "Esperando confirmación de wallet..." (carga inicial)
+   - "Transacción enviada, esperando confirmación..." (después de firma)
+   - "¡Solicitud enviada con éxito!" (después de confirmación)
+4. **Actualización de Estado**: Actualiza optimísticamente la UI y luego refresca de blockchain
+5. **Manejo de Errores**: Detecta y presenta errores específicos (rechazo, fondos insuficientes, etc.)
 
-#### Métodos de Escritura
+### Implementación Clave
 
-Recuperan el contrato con firmante usando `getContractWithSigner()`, ejecutan la transacción, esperan su confirmación (`tx.wait(1, 2000)`), y devuelven el hash de la transacción para notificaciones.
+```tsx
+const handleRequest = async (role: string) => {
+  // Pre-validaciones
+  const currentStatus = roleStatuses.find(s => s.role === role);
+  if (currentStatus?.state === 1) {
+    toast.error('Rol ya aprobado');
+    return;
+  }
 
-- `approveRole`, `rejectRole`, `registerNetbooks`, `auditHardware`, etc.: Son directamente equivalentes a las funciones del contrato.
-- Todos tienen un manejo de errores robusto con un método privado `handleError` que transforma los errores de `ethers` en un objeto `ContractError` consistente.
-
-### 4.3. Funciones Auxiliares
-
-- **`getRoleConstants()`**: Exporta los valores "hardcodeados" de los hashes de roles (0x...796d, 0x...88ee, etc.). Son los mismos que se generan con `keccak256` en el contrato.
-- **`fetchRoleConstants(Web3Service)`**: Intenta obtener los roles desde el contrato (mejor práctica), y si falla, usa los hardcoded. Muy importante para mantener la coherencia.
-
-## 5. Componentes Principales
-
-### 5.1. Dashboard (`EnhancedDashboard.tsx`)
-
-Componente principal para usuarios conectados. Muestra un dashboard adaptativo basado en los roles del usuario.
-
-- **Lógica de Acciones**: Define un objeto `roleActions` que muestra diferentes `Button`s de acceso a funciones según el rol del usuario (`isDefaultAdmin`, `isAdmin`).
-- **Indicadores para Admin de Anvil**: Si la dirección es "0xf39...266", detecta si el usuario *debería* ser admin pero el sistema no lo reconoce, mostrando un
+  // Mostrar toast

@@ -14,17 +14,41 @@ import { useWeb3 } from '@/lib/contexts/Web3Context';
 import { getRoleConstants } from '@/lib/services/Web3Service';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Factory, HardDrive, Cpu, School, CheckCircle2, XCircle, Clock, ArrowRight } from 'lucide-react';
+import { Loader2, Factory, HardDrive, Cpu, School, CheckCircle2, XCircle, Clock, ArrowRight, Mail } from 'lucide-react';
 import { UserRoleStatus } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { useWeb3Validation } from '@/lib/hooks/useWeb3Validation';
 
 interface RoleStatus extends UserRoleStatus {
     roleName: string;
     description: string;
+    lastTransactionHash?: string;
+    lastTransactionTimestamp?: number;
 }
 
 export function RoleRequest() {
     const { address, isConnected, web3Service } = useWeb3();
+    const { isNetworkValid } = useWeb3Validation();
+    
+    // Network validation function
+    const validateNetwork = useCallback(async (): Promise<boolean> => {
+        if (isNetworkValid === false) {
+            toast.error('Red Incorrecta', {
+                description: 'Por favor, cambie a la red local o configurada para continuar.',
+                duration: 10000,
+            });
+            return false;
+        }
+        
+        if (isNetworkValid === null) {
+            toast.loading('Verificando red...', {
+                description: 'Por favor espere mientras verificamos su conexión.',
+            });
+            return false;
+        }
+        
+        return true;
+    }, [isNetworkValid]);
 
     // Scroll to this component when mounted (for navigation from dashboard)
     useEffect(() => {
@@ -38,6 +62,7 @@ export function RoleRequest() {
     const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
     const [roleStatuses, setRoleStatuses] = useState<RoleStatus[]>([]);
     const [fetching, setFetching] = useState(true);
+    const [showContactModal, setShowContactModal] = useState(false);
 
     const roles = useMemo(() => [
         {
@@ -100,23 +125,17 @@ export function RoleRequest() {
         }
     }, [isConnected, address, web3Service, roles]);
 
-    // Set up event listeners for role status updates
+    // Set up periodic refresh for role status updates
     useEffect(() => {
         if (!web3Service) return;
 
-        const handleRoleEvent = () => {
-            console.log('Role event detected, refreshing statuses...');
+        // Refresh roles every 30 seconds to catch any changes
+        const refreshInterval = setInterval(() => {
             fetchStatuses();
-        };
-
-        // Listen to all role-related events
-        web3Service.setupEventListener('RoleRequested', handleRoleEvent);
-        web3Service.setupEventListener('RoleApproved', handleRoleEvent);
-        web3Service.setupEventListener('RoleRejected', handleRoleEvent);
-        web3Service.setupEventListener('RoleRequestCanceled', handleRoleEvent);
+        }, 30000);
 
         return () => {
-            web3Service.removeAllEventListeners();
+            clearInterval(refreshInterval);
         };
     }, [web3Service, fetchStatuses]);
 
@@ -129,63 +148,47 @@ export function RoleRequest() {
             toast.error('Error de conexión', { description: 'Web3Service no está disponible.' });
             return;
         }
+
+        // Check network validation
+        const networkValid = await validateNetwork();
+        if (!networkValid) {
+            return;
+        }
+
+        // Pre-validation: check current status before attempting transaction
+        const currentStatus = roleStatuses.find(s => s.role === role);
+
+        if (currentStatus?.state === 1) {
+            toast.error('Rol ya aprobado', {
+                description: 'Ya tienes este rol aprobado.'
+            });
+            return;
+        }
+
         setLoadingStates(prev => ({ ...prev, [role]: true }));
 
-        // Show initial toast
-        const loadingToast = toast.loading('Esperando confirmación de la wallet...', {
-            description: 'Por favor, confirma la transacción en tu wallet'
-        });
-
         try {
-            const txHash = await web3Service.requestRoleApproval(role);
-            console.log('Role request transaction hash:', txHash);
-
-            // Update toast to show transaction is pending
-            toast.loading('Transacción enviada, esperando confirmación...', {
-                id: loadingToast,
-                description: `Hash: ${txHash.slice(0, 10)}...${txHash.slice(-8)}`
+            // In the simplified system, users cannot request roles directly
+            // Show informational message instead
+            toast.info('Solicitud de Rol', {
+                description: 'Los roles deben ser otorgados por un administrador. Contacta al administrador del sistema para solicitar acceso a este rol.',
+                duration: 8000,
+                icon: 'ℹ️'
             });
 
-            // Wait a bit for the transaction to be mined
+            // Simulate a small delay for UX
             await new Promise(resolve => setTimeout(resolve, 1000));
 
-            // Success toast
-            toast.success('¡Solicitud enviada con éxito!', {
-                id: loadingToast,
-                description: `Tu solicitud está pendiente de aprobación por un administrador.`,
-                duration: 5000
-            });
-
-            // Optimistically update the UI
-            setRoleStatuses(prev => prev.map(status =>
-                status.role === role
-                    ? { ...status, state: 0, account: address || '0x0000000000000000000000000000000000000000' }
-                    : status
-            ));
-
-            // Refresh from blockchain after a delay
-            setTimeout(() => fetchStatuses(), 2000);
         } catch (error: unknown) {
             console.error('Error requesting role:', error);
             const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
 
-            // Check if user rejected the transaction
-            if (errorMessage.includes('user rejected') || errorMessage.includes('User denied')) {
-                toast.error('Transacción cancelada', {
-                    id: loadingToast,
-                    description: 'Has cancelado la transacción en tu wallet.'
-                });
-            } else {
-                toast.error('Error al enviar solicitud', {
-                    id: loadingToast,
-                    description: errorMessage
-                });
-            }
-
-            // Revert optimistic update on error
-            await fetchStatuses();
+            toast.error('Error en la solicitud', {
+                description: `No se pudo procesar la solicitud. \n${errorMessage}`,
+                duration: 5000,
+                icon: '❌'
+            });
         } finally {
-
             setLoadingStates(prev => ({ ...prev, [role]: false }));
         }
     };
@@ -197,50 +200,26 @@ export function RoleRequest() {
         }
         setLoadingStates(prev => ({ ...prev, [role]: true }));
 
-        // Show initial toast
-        const loadingToast = toast.loading('Esperando confirmación de la wallet...', {
-            description: 'Por favor, confirma la cancelación en tu wallet'
-        });
-
         try {
-            const txHash = await web3Service.cancelRoleRequest(role);
-
-            // Update toast to show transaction is pending
-            toast.loading('Transacción enviada, esperando confirmación...', {
-                id: loadingToast,
-                description: `Hash: ${txHash.slice(0, 10)}...${txHash.slice(-8)}`
+            // In the simplified system, there are no role requests to cancel
+            toast.info('Cancelación de Solicitud', {
+                description: 'No hay solicitudes de rol pendientes para cancelar en el sistema simplificado.',
+                duration: 5000,
+                icon: 'ℹ️'
             });
 
-            // Wait a bit for the transaction to be mined
+            // Simulate a small delay for UX
             await new Promise(resolve => setTimeout(resolve, 1000));
 
-            // Success toast
-            toast.success('Solicitud cancelada con éxito', {
-                id: loadingToast,
-                description: 'Tu solicitud ha sido cancelada.',
-                duration: 5000
-            });
-
-            // Refresh from blockchain
-            setTimeout(() => fetchStatuses(), 2000);
         } catch (error: unknown) {
             console.error('Error canceling role:', error);
             const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
 
-            // Check if user rejected the transaction
-            if (errorMessage.includes('user rejected') || errorMessage.includes('User denied')) {
-                toast.error('Cancelación rechazada', {
-                    id: loadingToast,
-                    description: 'Has cancelado la transacción en tu wallet.'
-                });
-            } else {
-                toast.error('Error al cancelar solicitud', {
-                    id: loadingToast,
-                    description: errorMessage
-                });
-            }
+            toast.error('Error al cancelar solicitud', {
+                description: errorMessage,
+                duration: 5000
+            });
         } finally {
-
             setLoadingStates(prev => ({ ...prev, [role]: false }));
         }
     };
@@ -259,13 +238,13 @@ export function RoleRequest() {
         }
 
         switch (status.state) {
-            case 0: // Pending
+            case 0: // Not approved
                 return {
-                    label: 'Pendiente de Aprobación',
-                    color: 'text-yellow-600',
-                    bgColor: 'bg-yellow-50',
-                    borderColor: 'border-yellow-200',
-                    icon: Clock
+                    label: 'Sin Acceso',
+                    color: 'text-gray-600',
+                    bgColor: 'bg-gray-50',
+                    borderColor: 'border-gray-200',
+                    icon: XCircle
                 };
             case 1: // Approved
                 return {
@@ -274,22 +253,6 @@ export function RoleRequest() {
                     bgColor: 'bg-green-50',
                     borderColor: 'border-green-200',
                     icon: CheckCircle2
-                };
-            case 2: // Rejected
-                return {
-                    label: 'Solicitud Rechazada',
-                    color: 'text-red-600',
-                    bgColor: 'bg-red-50',
-                    borderColor: 'border-red-200',
-                    icon: XCircle
-                };
-            case 3: // Canceled
-                return {
-                    label: 'Cancelado',
-                    color: 'text-muted-foreground',
-                    bgColor: 'bg-muted',
-                    borderColor: 'border-border',
-                    icon: XCircle
                 };
             default:
                 return {
@@ -307,10 +270,10 @@ export function RoleRequest() {
     return (
         <div id="role-request" className="space-y-6">
             <div className="flex flex-col gap-2">
-                <h2 className="text-2xl font-bold tracking-tight">Solicitar Roles</h2>
+                <h2 className="text-2xl font-bold tracking-tight">Gestión de Roles</h2>
                 <p className="text-muted-foreground">
-                    Selecciona el rol que mejor se adapte a tu función en la cadena de suministro.
-                    Los administradores revisarán tu solicitud.
+                    Consulta el estado de tus roles en el sistema. Los roles deben ser otorgados 
+                    por administradores del sistema. Contacta a un administrador para solicitar acceso.
                 </p>
             </div>
 
@@ -375,7 +338,7 @@ export function RoleRequest() {
                                         >
                                             {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : (
                                                 <>
-                                                    Solicitar Acceso
+                                                    Solicitar Acceso a Admin
                                                     <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                                                 </>
                                             )}
@@ -383,14 +346,10 @@ export function RoleRequest() {
                                     )}
 
                                     {status.state === 0 && (
-                                        <Button
-                                            variant="outline"
-                                            className="w-full border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
-                                            onClick={() => handleCancel(status.role)}
-                                            disabled={isLoading}
-                                        >
-                                            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Cancelar Solicitud'}
-                                        </Button>
+                                        <div className="w-full py-2 text-center text-sm font-medium text-blue-600 bg-blue-50 rounded-md border border-blue-100 flex items-center justify-center gap-2">
+                                            <Clock className="w-4 h-4" />
+                                            Esperando Aprobación de Admin
+                                        </div>
                                     )}
 
                                     {status.state === 1 && (
@@ -400,10 +359,20 @@ export function RoleRequest() {
                                         </div>
                                     )}
 
-                                    {status.state === 2 && (
-                                        <div className="w-full py-2 text-center text-sm font-medium text-red-600 bg-red-50 rounded-md border border-red-100 flex items-center justify-center gap-2">
-                                            <XCircle className="w-4 h-4" />
-                                            Acceso Denegado Permanentemente
+
+                                    
+                                    {/* Transaction history */}
+                                    {status.lastTransactionHash && (
+                                        <div className="text-xs text-muted-foreground mt-2">
+                                            Última transacción: 
+                                            <a 
+                                                href={`https://$${window.location.hostname}/tx/$${status.lastTransactionHash}`} 
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-primary hover:underline"
+                                            >
+                                                $${status.lastTransactionHash.slice(0, 6)}...$${status.lastTransactionHash.slice(-4)}
+                                            </a>
                                         </div>
                                     )}
                                 </CardFooter>
